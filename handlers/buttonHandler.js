@@ -7,6 +7,8 @@
 import 'dotenv/config';
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import { logAction } from '../utils/logger.js';
+import { setDmPreference, getRecruitment, updateRecruitment } from '../utils/recruitStore.js';
+import { buildRecruitEmbed, buildRecruitButtons } from '../utils/recruitEmbed.js';
 
 // --- 環境変数の読み込み ---
 const MODERATION_CHANNEL_ID = process.env.MODERATION_CHANNEL_ID;
@@ -273,6 +275,119 @@ async function handleDenial(interaction, userId) {
 }
 
 // ==============================================
+// 募集DM通知設定ボタン処理
+// customId: pref_set:<guildId>:<in|out>
+// ==============================================
+async function handlePreferenceSet(interaction, guildId, value) {
+    setDmPreference(guildId, interaction.user.id, value);
+
+    const label = value === 'in' ? '🔔 受け取る' : '🔕 受け取らない';
+    const guild = interaction.client.guilds.cache.get(guildId);
+    const guildName = guild ? guild.name : 'サーバー';
+
+    const embed = new EmbedBuilder()
+        .setTitle('📨 募集DM通知設定')
+        .setDescription(
+            `**${guildName}** の募集DM通知設定を **${label}** に変更しました。\n\n` +
+            '設定はいつでも `/recruit-notify` コマンドで変更できます。'
+        )
+        .setColor(value === 'in' ? '#28a745' : '#6c757d')
+        .setTimestamp();
+
+    const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId(`pref_set:${guildId}:in`)
+            .setLabel('受け取る')
+            .setEmoji('🔔')
+            .setStyle(value === 'in' ? ButtonStyle.Success : ButtonStyle.Secondary),
+        new ButtonBuilder()
+            .setCustomId(`pref_set:${guildId}:out`)
+            .setLabel('受け取らない')
+            .setEmoji('🔕')
+            .setStyle(value === 'out' ? ButtonStyle.Danger : ButtonStyle.Secondary)
+    );
+
+    try {
+        await interaction.update({ embeds: [embed], components: [row] });
+    } catch (err) {
+        // 何らかの理由でupdateできない場合はreplyにフォールバック
+        await interaction.reply({ embeds: [embed], components: [row], flags: 64 }).catch(() => {});
+    }
+
+    console.log(`[INFO] 募集DM通知設定変更: ${interaction.user.tag} (${interaction.user.id}) -> ${value} | guild: ${guildId}`);
+}
+
+// ==============================================
+// 募集への意思表示ボタン処理
+// customId: recruit_resp:<recruitId>:<join|decline|unsure>
+// ==============================================
+async function handleRecruitResponse(interaction, recruitId, action) {
+    const recruit = getRecruitment(recruitId);
+
+    if (!recruit) {
+        return interaction.reply({
+            content: '❌ この募集は見つかりませんでした（削除されたか、期限切れの可能性があります）。',
+            flags: 64
+        }).catch(() => {});
+    }
+
+    // 定員チェック（参加希望 かつ 未参加者 かつ 定員設定がある場合のみ）
+    if (action === 'join' && recruit.capacity) {
+        const currentJoinCount = Object.values(recruit.responses || {}).filter(v => v === 'join').length;
+        const alreadyJoined = recruit.responses?.[interaction.user.id] === 'join';
+        if (!alreadyJoined && currentJoinCount >= recruit.capacity) {
+            return interaction.reply({
+                content: `⚠ この募集は定員 (${recruit.capacity}人) に達しています。「わからない」などでの意思表示は引き続き可能です。`,
+                flags: 64
+            }).catch(() => {});
+        }
+    }
+
+    const updated = updateRecruitment(recruitId, r => {
+        if (!r.responses) r.responses = {};
+        r.responses[interaction.user.id] = action;
+    });
+
+    if (!updated) {
+        return interaction.reply({
+            content: '❌ 募集データの更新に失敗しました。もう一度お試しください。',
+            flags: 64
+        }).catch(() => {});
+    }
+
+    const embed = buildRecruitEmbed(updated);
+    const row   = buildRecruitButtons(recruitId);
+
+    // クリックされたメッセージ自体を更新
+    try {
+        await interaction.update({ embeds: [embed], components: [row] });
+    } catch (err) {
+        console.error('[ERROR] 募集メッセージ更新失敗 (クリック元):', err);
+    }
+
+    // クリック元がサーバーチャンネルの元メッセージ「以外」(=DM等)なら、
+    // サーバー内の本体メッセージも同期して更新する
+    const isOriginalChannelMessage = interaction.message?.id === updated.messageId;
+    if (!isOriginalChannelMessage) {
+        try {
+            const channel = await interaction.client.channels.fetch(updated.channelId);
+            const originalMessage = await channel.messages.fetch(updated.messageId);
+            await originalMessage.edit({ embeds: [embed], components: [row] });
+        } catch (err) {
+            console.log(`[INFO] 元の募集メッセージの同期更新に失敗（削除された可能性）: ${err.message}`);
+        }
+    }
+
+    // DMでの回答の場合は、わかりやすく完了メッセージを追加送信
+    if (interaction.channel?.isDMBased?.()) {
+        const label = { join: '✅ 参加する', decline: '❌ 参加しない', unsure: '🤔 わからない' }[action];
+        await interaction.followUp({ content: `${label} で回答を記録しました。`, flags: 64 }).catch(() => {});
+    }
+
+    console.log(`[INFO] 募集回答: ${interaction.user.tag} (${interaction.user.id}) -> ${action} | 募集ID: ${recruitId}`);
+}
+
+// ==============================================
 // ユーティリティ: 全ボタンを無効化したActionRowを返す
 // ==============================================
 function disableAllButtons(message) {
@@ -299,6 +414,14 @@ export async function handleButtonInteraction(interaction) {
     } else if (customId.startsWith('deny_user:')) {
         const userId = customId.split(':')[1];
         await handleDenial(interaction, userId);
+
+    } else if (customId.startsWith('pref_set:')) {
+        const [, guildId, value] = customId.split(':');
+        await handlePreferenceSet(interaction, guildId, value);
+
+    } else if (customId.startsWith('recruit_resp:')) {
+        const [, recruitId, action] = customId.split(':');
+        await handleRecruitResponse(interaction, recruitId, action);
 
     } else {
         console.warn(`[WARNING] 未知のボタンインタラクション: ${customId}`);

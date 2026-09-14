@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url';
 import express from 'express';
 import { initAuditLogger } from './utils/logger.js';
 import { initAfkDetector } from './handlers/afkHandler.js';
+import { initMemberJoinNotifier } from './handlers/memberJoinHandler.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -269,6 +270,9 @@ client.once('ready', async () => {
 
     // AFK自動検出開始
     initAfkDetector(client);
+
+    // 新規メンバー向け 募集DM通知の初期案内 開始
+    initMemberJoinNotifier(client);
 
     console.log('[SUCCESS] ✓ Bot初期化完了。全システム稼働中。');
 });

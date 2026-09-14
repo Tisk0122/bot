@@ -9,6 +9,8 @@ import express from 'express';
 import { initAuditLogger } from './utils/logger.js';
 import { initAfkDetector } from './handlers/afkHandler.js';
 import { initMemberJoinNotifier } from './handlers/memberJoinHandler.js';
+import { handleNicknameMessage } from './handlers/nicknameHandler.js';
+import { mountDashboard } from './web/dashboardRoutes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -123,6 +125,12 @@ const client = new Client({
 });
 
 client.commands = new Collection();
+
+// ==============================================
+// 管理者ダッシュボード (/admin) のマウント
+// 環境変数 DASHBOARD_PASSWORD が未設定の場合は無効化される
+// ==============================================
+mountDashboard(app, client);
 
 // ==============================================
 // コマンドファイル読み込み (commands/ フォルダ)
@@ -336,11 +344,18 @@ client.on('interactionCreate', async interaction => {
 // メッセージ イベント (BANシステム)
 // ==============================================
 client.on('messageCreate', async message => {
-    if (!handleBanMessage) return;
+    if (handleBanMessage) {
+        try {
+            await handleBanMessage(message);
+        } catch (err) {
+            console.error('[ERROR] BANメッセージ処理エラー:', err);
+        }
+    }
+
     try {
-        await handleBanMessage(message);
+        await handleNicknameMessage(message);
     } catch (err) {
-        console.error('[ERROR] BANメッセージ処理エラー:', err);
+        console.error('[ERROR] ニックネームメッセージ処理エラー:', err);
     }
 });
 

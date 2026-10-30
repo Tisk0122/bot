@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import fs from 'node:fs';
 import path from 'node:path';
-import { Client, Collection, GatewayIntentBits, InteractionType } from 'discord.js';
+import { Client, Collection, GatewayIntentBits, InteractionType, MessageFlags } from 'discord.js';
 import { REST } from '@discordjs/rest';
 import { Routes } from 'discord-api-types/v10';
 import { fileURLToPath } from 'url';
@@ -323,7 +323,7 @@ client.on('interactionCreate', async interaction => {
                 if (!interaction.replied && !interaction.deferred) {
                     await interaction.reply({
                         content: 'システムエラーが発生しました。管理者に連絡してください。',
-                        flags: 64
+                        flags: MessageFlags.Ephemeral
                     });
                 }
             }
@@ -335,7 +335,7 @@ client.on('interactionCreate', async interaction => {
         try {
             const errMsg = {
                 content: 'エラーが発生しました。しばらく後にもう一度お試しください。',
-                flags: 64
+                flags: MessageFlags.Ephemeral
             };
             if (!interaction.replied && !interaction.deferred) {
                 await interaction.reply(errMsg);

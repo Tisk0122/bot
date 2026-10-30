@@ -56,7 +56,7 @@ async function handleVerifyUser(interaction) {
     const embed = new EmbedBuilder()
         .setTitle('認証申請')
         .setDescription(`${member} (${member.user.tag}) が認証を申請しました。`)
-        .setThumbnail(member.user.displayAvatarURL({ dynamic: true, size: 256 }))
+        .setThumbnail(member.user.displayAvatarURL({ size: 256 }))
         .addFields(
             { name: 'ユーザー名',       value: member.user.tag,                                                          inline: true },
             { name: 'ユーザーID',       value: member.id,                                                                inline: true },

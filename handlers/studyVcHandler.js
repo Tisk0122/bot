@@ -3,28 +3,29 @@
 // おべんきょVCの専用ハンドラー
 //
 // 機能:
-//   1. 入室通知: 正規ユーザーにはDMでルールと開始時刻を通知
-//   2. 入退室ログ: ログチャンネルにサイレントメッセージで送信
+//   1. 入室制限: 勉強ロールを持っていないユーザーをVCから切断する
+//   2. 入室通知: 正規ユーザーにはDMでルールと開始時刻を通知
+//   3. 入退室ログ: ログチャンネルにサイレントメッセージで送信
 //      （通知音を出さないサイレント送信）
-//   3. セッション追跡: 各ユーザーの勉強時間をインメモリで管理
+//   4. セッション追跡: 各ユーザーの勉強時間をインメモリで管理
 //
-// ※ロールの付与・削除は /study-role コマンドで手動管理します
+// ※ロールの付与は /study-role give コマンドで管理します
 //
 // 環境変数:
 //   STUDY_VC_ID          おべんきょVCのチャンネルID
 //                        (デフォルト: 1505121212182036591)
-//   AFK_TIMEOUT_MINUTES  AFK検出タイムアウト分 (afkHandlerと共有)
-//
-// ログチャンネル: 1472968673558790377 (固定)
+//   STUDY_LOG_CHANNEL_ID ログを送信するチャンネルID
+//                        (デフォルト: 1472968673558790377)
+//   STUDY_ROLE_NAME      入室を許可するロール名 (デフォルト: 勉強中)
 // ==============================================
 
 import 'dotenv/config';
 import { EmbedBuilder, MessageFlags } from 'discord.js';
 import { getStudyRecord } from '../utils/studyRoleStore.js';
 
-const STUDY_VC_ID         = process.env.STUDY_VC_ID || '1505121212182036591';
-const STUDY_LOG_CHANNEL_ID = '1472968673558790377';
-const AFK_TIMEOUT_MINUTES = parseInt(process.env.AFK_TIMEOUT_MINUTES, 10) || 30;
+const STUDY_VC_ID          = process.env.STUDY_VC_ID          || '1505121212182036591';
+const STUDY_LOG_CHANNEL_ID = process.env.STUDY_LOG_CHANNEL_ID || '1472968673558790377';
+const STUDY_ROLE_NAME      = process.env.STUDY_ROLE_NAME      || '勉強中';
 
 // インメモリのセッション管理
 // userId -> { joinedAt: number }
@@ -65,10 +66,55 @@ async function sendLog(client, embed) {
 }
 
 // ==============================================
+// 入室制限チェック: ロールを持っていない場合は切断してDM通知
+// ==============================================
+async function checkAndEnforceRole(member) {
+    const role = member.guild.roles.cache.find(
+        r => r.name.toLowerCase() === STUDY_ROLE_NAME.toLowerCase()
+    );
+
+    // ロール自体がサーバーに存在しない、またはメンバーがロールを持っている → 入室OK
+    if (!role || member.roles.cache.has(role.id)) return false;
+
+    // ロールを持っていない → 切断
+    try {
+        await member.voice.disconnect('おべんきょVC: 勉強ロールなし');
+        console.log(`[Study] 入室拒否（ロールなし）: ${member.user.tag} (${member.id})`);
+    } catch (err) {
+        console.error(`[Study] 切断失敗 (${member.user.tag}):`, err.message);
+        return true; // 切断失敗でも以降の処理はスキップ
+    }
+
+    // 切断理由をDMで通知
+    try {
+        await member.send({
+            embeds: [
+                new EmbedBuilder()
+                    .setTitle('おべんきょVC - 入室できません')
+                    .setDescription(
+                        `おべんきょVCに入室するには **${STUDY_ROLE_NAME}** ロールが必要です。\n\n` +
+                        '管理者に連絡してロールを付与してもらってください。'
+                    )
+                    .setColor(0xe74c3c)
+                    .setTimestamp()
+            ]
+        });
+    } catch {
+        // DM送信失敗は無視
+    }
+
+    return true; // 切断した = 処理終了
+}
+
+// ==============================================
 // VC入室時の処理
 // ==============================================
 async function onStudyJoin(member, client) {
     const userId = member.id;
+
+    // ロールチェック（持っていなければ切断して終了）
+    const wasKicked = await checkAndEnforceRole(member);
+    if (wasKicked) return;
 
     // 既存セッションがあればクリア（念のため）
     sessions.delete(userId);
@@ -90,8 +136,7 @@ async function onStudyJoin(member, client) {
                         'おべんきょVCに参加しました。集中して頑張りましょう。\n\n' +
                         '**ルール**\n' +
                         '- 勉強・作業に集中してください\n' +
-                        '- 長時間の雑談は控えましょう\n' +
-                        `- ${AFK_TIMEOUT_MINUTES}分以上無操作状態が続くとAFKチャンネルへ移動されます\n\n` +
+                        '- 長時間の雑談は控えましょう\n\n' +
                         `**開始時刻**: <t:${Math.floor(Date.now() / 1000)}:t>` +
                         (subject ? `\n**科目**: ${subject}` : '')
                     )
@@ -213,8 +258,12 @@ export function initStudyVc(client) {
             for (const [, member] of guild.members.cache) {
                 if (member.id === client.user.id) continue;
                 if (member.voice.channel?.id !== STUDY_VC_ID) continue;
+
+                // 起動時にもロールチェック
+                const wasKicked = await checkAndEnforceRole(member).catch(() => false);
+                if (wasKicked) continue;
+
                 sessions.set(member.id, { joinedAt: Date.now() });
-                // 起動時はロール付与しない（既に在室中のユーザーなので手動管理を尊重）
                 console.log(`[Study] 起動時セッション引き継ぎ: ${member.user.tag}`);
             }
         }

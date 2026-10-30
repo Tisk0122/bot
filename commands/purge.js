@@ -26,11 +26,15 @@ export async function execute(interaction) {
     const targetUser = interaction.options.getUser('user');
 
     try {
-        const messages = await interaction.channel.messages.fetch({ limit: count });
+        // ユーザー指定がある場合は最大100件取得してからフィルタする
+        // (対象ユーザーのメッセージが count 件に達しない場合もあるが、
+        //  Discord の bulkDelete は最大100件までのため 100 がAPIの上限)
+        const fetchLimit = targetUser ? 100 : count;
+        const messages = await interaction.channel.messages.fetch({ limit: fetchLimit });
 
         let filtered = [...messages.values()];
         if (targetUser) {
-            filtered = filtered.filter(m => m.author.id === targetUser.id);
+            filtered = filtered.filter(m => m.author.id === targetUser.id).slice(0, count);
         }
 
         if (filtered.length === 0) {

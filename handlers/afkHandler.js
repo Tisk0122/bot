@@ -1,7 +1,9 @@
 import { EmbedBuilder } from 'discord.js';
 
-const AFK_CHANNEL_ID = process.env.AFK_CHANNEL_ID;
-const AFK_TIMEOUT_MS = (parseInt(process.env.AFK_TIMEOUT_MINUTES, 10) || 30) * 60 * 1000;
+const AFK_CHANNEL_ID  = process.env.AFK_CHANNEL_ID;
+const AFK_TIMEOUT_MS  = (parseInt(process.env.AFK_TIMEOUT_MINUTES, 10) || 30) * 60 * 1000;
+// おべんきょVCはAFK対象外（スマホ等で勉強中の場合も考慮）
+const STUDY_VC_ID     = process.env.STUDY_VC_ID || '1505121212182036591';
 
 // userId -> { timer, channelId, joinedAt }
 const afkTimers = new Map();
@@ -20,6 +22,9 @@ function startAfkTimer(member) {
     clearAfkTimer(userId);
 
     if (!AFK_CHANNEL_ID) return;
+
+    // おべんきょVCにいる場合はAFK対象外
+    if (member.voice?.channel?.id === STUDY_VC_ID) return;
 
     const timer = setTimeout(async () => {
         afkTimers.delete(userId);

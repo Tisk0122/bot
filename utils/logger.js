@@ -1,4 +1,4 @@
-import { EmbedBuilder } from 'discord.js';
+import { EmbedBuilder, AuditLogEvent } from 'discord.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'url';
@@ -60,7 +60,7 @@ export async function logAction(guild, { action, executor, target, channel, deta
 export function initAuditLogger(client) {
     client.on('guildBanAdd', async ban => {
         if (!LOG_CHANNEL_ID) return;
-        const entry = await ban.guild.fetchAuditLogs({ type: 22, limit: 1 }).catch(() => null);
+        const entry = await ban.guild.fetchAuditLogs({ type: AuditLogEvent.MemberBanAdd, limit: 1 }).catch(() => null);
         const auditEntry = entry?.entries?.first();
         const executor = auditEntry?.executor || { tag: '不明', id: '0' };
 
@@ -74,7 +74,7 @@ export function initAuditLogger(client) {
 
     client.on('guildBanRemove', async ban => {
         if (!LOG_CHANNEL_ID) return;
-        const entry = await ban.guild.fetchAuditLogs({ type: 23, limit: 1 }).catch(() => null);
+        const entry = await ban.guild.fetchAuditLogs({ type: AuditLogEvent.MemberBanRemove, limit: 1 }).catch(() => null);
         const auditEntry = entry?.entries?.first();
         const executor = auditEntry?.executor || { tag: '不明', id: '0' };
 

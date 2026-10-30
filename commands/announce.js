@@ -64,10 +64,7 @@ export async function execute(interaction) {
         .setFooter({ text: `${interaction.guild.name} お知らせ` })
         .setTimestamp();
 
-    let content = '';
-    if (mentionRole) {
-        content = `<@&${mentionRole.id}>`;
-    }
+    const content = mentionRole ? `<@&${mentionRole.id}>` : undefined;
 
     try {
         await channel.send({ content, embeds: [embed] });

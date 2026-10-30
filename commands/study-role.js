@@ -5,8 +5,7 @@
 // サブコマンド:
 //   give   - ユーザーに勉強ロールを付与する
 //            ロールが存在しなければ自動作成する
-//   remove - ユーザーから勉強ロールを剥奪し、
-//            他に誰も持っていなければロールを自動削除する
+//   remove - ユーザーから勉強ロールを剥奪する
 //   list   - 現在の勉強ロール保持者一覧を表示する
 // ==============================================
 
@@ -40,7 +39,7 @@ export const data = new SlashCommandBuilder()
     .addSubcommand(sub =>
         sub
             .setName('remove')
-            .setDescription('ユーザーから勉強ロールを剥奪します（誰も持っていなければロールを削除）')
+            .setDescription('ユーザーから勉強ロールを剥奪します')
             .addUserOption(opt =>
                 opt.setName('user')
                     .setDescription('剥奪するユーザー')
@@ -119,8 +118,10 @@ async function handleGive(interaction) {
     // 既に持っているかチェック
     const alreadyHas = target.roles.cache.has(role.id);
 
-    // ロール付与
-    await target.roles.add(role.id, `勉強ロール付与 | 科目: ${subject} | 付与者: ${interaction.user.tag}`);
+    // ロール付与（既に持っている場合はAPIコールをスキップ）
+    if (!alreadyHas) {
+        await target.roles.add(role.id, `勉強ロール付与 | 科目: ${subject} | 付与者: ${interaction.user.tag}`);
+    }
 
     // 記録を保存
     setStudyRecord(interaction.guild.id, target.id, {

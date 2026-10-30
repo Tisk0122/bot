@@ -58,7 +58,7 @@ export async function execute(interaction) {
     const color = parseColor(interaction.options.getString('color'));
 
     const embed = new EmbedBuilder()
-        .setTitle(`📢 ${title}`)
+        .setTitle(title)
         .setDescription(message)
         .setColor(color)
         .setFooter({ text: `${interaction.guild.name} お知らせ` })
@@ -71,9 +71,9 @@ export async function execute(interaction) {
 
     try {
         await channel.send({ content, embeds: [embed] });
-        await interaction.editReply(`✅ <#${channel.id}> にお知らせを送信しました。`);
+        await interaction.editReply(`<#${channel.id}> にお知らせを送信しました。`);
     } catch (err) {
         console.error('[ERROR] announce 送信エラー:', err);
-        await interaction.editReply('❌ お知らせの送信に失敗しました。ボットの権限を確認してください。');
+        await interaction.editReply('お知らせの送信に失敗しました。ボットの権限を確認してください。');
     }
 }

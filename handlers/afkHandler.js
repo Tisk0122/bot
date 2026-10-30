@@ -41,7 +41,7 @@ function startAfkTimer(member) {
                 await freshMember.send({
                     embeds: [
                         new EmbedBuilder()
-                            .setTitle('😴 おねんねVCに送られました')
+                            .setTitle('おねんねVCに送られました')
                             .setDescription(
                                 `長時間活動がなかったため、おねんねVCに自動移動しました。\n` +
                                 `再びボイスチャンネルに参加すれば元に戻れます。`
@@ -68,14 +68,14 @@ export function initAfkDetector(client) {
     console.log(`[AFK] AFK自動検出を有効化 | タイムアウト: ${AFK_TIMEOUT_MS / 60000}分 | おねんねVC: ${AFK_CHANNEL_ID}`);
 
     client.on('voiceStateUpdate', (oldState, newState) => {
-        const { id: userId, guild } = oldState;
+        const { id: userId } = oldState;
 
         // ボット自身は無視
         if (userId === client.user.id) return;
 
         // チャンネル参加
         if (!oldState.channel && newState.channel) {
-            startAfkTimer(newState.member);
+            if (newState.member) startAfkTimer(newState.member);
         }
         // チャンネル退出
         else if (oldState.channel && !newState.channel) {
@@ -87,13 +87,13 @@ export function initAfkDetector(client) {
             if (newState.channel.id === AFK_CHANNEL_ID) {
                 clearAfkTimer(userId);
             } else {
-                startAfkTimer(newState.member);
+                if (newState.member) startAfkTimer(newState.member);
             }
         }
         // ミュート/デフの変更で再起動（活動があったとみなす）
         else if (oldState.channel && newState.channel && oldState.channel.id === newState.channel.id) {
             if (oldState.mute !== newState.mute || oldState.deaf !== newState.deaf) {
-                startAfkTimer(newState.member);
+                if (newState.member) startAfkTimer(newState.member);
             }
         }
     });

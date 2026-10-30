@@ -92,13 +92,13 @@ export async function execute(interaction) {
 
         const isSameChannel = channel.id === interaction.channel.id;
         await interaction.reply({
-            content: isSameChannel ? '✅ Embedを送信しました。' : `✅ <#${channel.id}> にEmbedを送信しました。`,
+            content: isSameChannel ? 'Embedを送信しました。' : `<#${channel.id}> にEmbedを送信しました。`,
             ephemeral: true
         });
     } catch (err) {
         console.error('[ERROR] embed 送信エラー:', err);
         await interaction.reply({
-            content: '❌ Embedの送信に失敗しました。ボットに「メッセージを送信」権限があるか確認してください。',
+            content: 'Embedの送信に失敗しました。ボットに「メッセージを送信」権限があるか確認してください。',
             ephemeral: true
         });
     }

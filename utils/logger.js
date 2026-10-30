@@ -9,12 +9,12 @@ const __dirname = path.dirname(__filename);
 const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID;
 
 const ACTION_LABELS = {
-    BAN:       { emoji: '🔨', color: 0xdc3545 },
-    UNBAN:     { emoji: '✅', color: 0x28a745 },
-    KICK:      { emoji: '👢', color: 0xfd7e14 },
-    TIMEOUT:   { emoji: '🔇', color: 0x6f42c1 },
-    PURGE:     { emoji: '🗑️', color: 0x6c757d },
-    VERIFY:    { emoji: '🔐', color: 0x007bff },
+    BAN:       { color: 0xdc3545 },
+    UNBAN:     { color: 0x28a745 },
+    KICK:      { color: 0xfd7e14 },
+    TIMEOUT:   { color: 0x6f42c1 },
+    PURGE:     { color: 0x6c757d },
+    VERIFY:    { color: 0x007bff },
 };
 
 export async function logAction(guild, { action, executor, target, channel, details }) {
@@ -23,10 +23,10 @@ export async function logAction(guild, { action, executor, target, channel, deta
     const logChannel = await guild.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
     if (!logChannel) return;
 
-    const config = ACTION_LABELS[action] || { emoji: '📋', color: 0x5865f2 };
+    const config = ACTION_LABELS[action] || { color: 0x5865f2 };
 
     const embed = new EmbedBuilder()
-        .setTitle(`${config.emoji} ${action}`)
+        .setTitle(`[${action}]`)
         .setColor(config.color)
         .addFields(
             { name: '実行者', value: `${executor.tag} (<@${executor.id}>)`, inline: true }

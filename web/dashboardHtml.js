@@ -141,14 +141,22 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
 <body>
 
 <header>
-  <h1>🛠 hinansaba 管理者ダッシュボード</h1>
+  <h1>
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px;"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>hinansaba 管理者ダッシュボード
+  </h1>
   <div class="status" id="status-line">読み込み中…</div>
 </header>
 
 <nav>
-  <button class="tab-btn active" data-tab="prefs">📨 通知設定</button>
-  <button class="tab-btn" data-tab="recruits">🎮 募集一覧</button>
-  <button class="tab-btn" data-tab="data">💾 データの引き継ぎ</button>
+  <button class="tab-btn active" data-tab="prefs">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>通知設定
+  </button>
+  <button class="tab-btn" data-tab="recruits">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>募集一覧
+  </button>
+  <button class="tab-btn" data-tab="data">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>データの引き継ぎ
+  </button>
 </nav>
 
 <main>
@@ -170,7 +178,9 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
           <option value="out">受け取らない のみ</option>
           <option value="unset">未設定 のみ</option>
         </select>
-        <button class="btn secondary" onclick="loadPreferences()">🔄 再読み込み</button>
+        <button class="btn secondary" onclick="loadPreferences()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>再読み込み
+        </button>
       </div>
       <table>
         <thead>
@@ -188,11 +198,13 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
       <h2>募集一覧</h2>
       <p class="desc">これまでに作成された募集と、参加状況の集計です。</p>
       <div class="toolbar">
-        <button class="btn secondary" onclick="loadRecruitments()">🔄 再読み込み</button>
+        <button class="btn secondary" onclick="loadRecruitments()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>再読み込み
+        </button>
       </div>
       <table>
         <thead>
-          <tr><th>ゲーム</th><th>日時</th><th>定員</th><th>✅参加</th><th>❌不参加</th><th>🤔わからない</th><th>作成日時</th></tr>
+          <tr><th>ゲーム</th><th>日時</th><th>定員</th><th>参加</th><th>不参加</th><th>わからない</th><th>作成日時</th></tr>
         </thead>
         <tbody id="recruit-tbody"></tbody>
       </table>
@@ -203,20 +215,22 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
   <!-- ============ データ引き継ぎタブ ============ -->
   <section class="tab" id="tab-data">
     <div class="card">
-      <h2>💾 データのダウンロード / コピー / アップロード</h2>
+      <h2>データのダウンロード / コピー / アップロード</h2>
       <p class="desc">
         プロジェクトを更新・再デプロイする際、このJSONデータを保存しておき、更新後にインポートすることで
         設定や募集履歴を引き継げます。
       </p>
       <div id="file-list"></div>
       <div class="note">
-        ⚠ インポートは既存データを<strong>上書き</strong>します（上書き前に自動でバックアップを作成します）。
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>インポートは既存データを<strong>上書き</strong>します（上書き前に自動でバックアップを作成します）。
         中身が正しいJSONであることを確認してから実行してください。
       </div>
     </div>
 
     <div class="card" id="import-panel" style="display:none;">
-      <h2>📥 インポート: <span id="import-filename" style="font-family:monospace;"></span></h2>
+      <h2>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:6px;"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.88 18.09A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.29"/></svg>インポート: <span id="import-filename" style="font-family:monospace;"></span>
+      </h2>
       <textarea id="import-textarea" placeholder="ここにJSONを貼り付け、またはファイルを選択してください"></textarea>
       <div class="toolbar" style="margin-top:10px;">
         <input type="file" id="import-file-input" accept="application/json">
@@ -265,8 +279,10 @@ async function loadStatus() {
   try {
     const res = await fetch(API.status);
     const data = await res.json();
+    const dotColor = data.ready ? '#28a745' : '#dc3545';
+    const dotLabel = data.ready ? '稼働中' : '未接続';
     document.getElementById('status-line').innerHTML =
-      (data.ready ? '🟢 稼働中' : '🔴 未接続') +
+      '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + dotColor + ';margin-right:5px;vertical-align:middle;"></span><b style="color:' + dotColor + '">' + dotLabel + '</b>' +
       ' ・ <b>' + (data.guildName || '不明') + '</b>' +
       ' ・ メンバー数: <b>' + (data.memberCount ?? '?') + '</b>' +
       ' ・ Bot: <b>' + (data.botTag || '?') + '</b>';
@@ -301,10 +317,10 @@ function renderPreferences() {
   for (const m of prefData) counts[m.preference] = (counts[m.preference] || 0) + 1;
 
   document.getElementById('pref-stats').innerHTML = [
-    ['🔔 受け取る', counts.in || 0],
-    ['🔕 受け取らない', counts.out || 0],
-    ['❔ 未設定', counts.unset || 0],
-    ['👥 合計', prefData.length]
+    ['受け取る', counts.in || 0],
+    ['受け取らない', counts.out || 0],
+    ['未設定', counts.unset || 0],
+    ['合計', prefData.length]
   ].map(([label, num]) =>
     '<div class="stat"><div class="num">' + num + '</div><div class="label">' + label + '</div></div>'
   ).join('');
@@ -313,7 +329,7 @@ function renderPreferences() {
   document.getElementById('pref-empty').style.display = filtered.length ? 'none' : 'block';
 
   tbody.innerHTML = filtered.map(m => {
-    const pillLabel = m.preference === 'in' ? '🔔 受け取る' : m.preference === 'out' ? '🔕 受け取らない' : '❔ 未設定';
+    const pillLabel = m.preference === 'in' ? '受け取る' : m.preference === 'out' ? '受け取らない' : '未設定';
     return '<tr>' +
       '<td><img class="avatar" src="' + m.avatarUrl + '"><span>' + escapeHtml(m.displayName) + '</span></td>' +
       '<td>' + m.userId + '</td>' +
@@ -370,9 +386,9 @@ async function loadFiles() {
           '<div class="file-meta">' + size + ' ・ 最終更新: ' + modified + '</div>' +
         '</div>' +
         '<div class="actions">' +
-          '<button class="btn secondary" onclick="copyFile(&quot;' + f.name + '&quot;)">📋 コピー</button>' +
-          '<a class="btn secondary" style="text-decoration:none;" href="' + API.exportFile(f.name) + '" download>⬇ ダウンロード</a>' +
-          '<button class="btn" onclick="openImportPanel(&quot;' + f.name + '&quot;)">📥 インポート</button>' +
+          '<button class="btn secondary" onclick="copyFile(&quot;' + f.name + '&quot;)">コピー</button>' +
+          '<a class="btn secondary" style="text-decoration:none;" href="' + API.exportFile(f.name) + '" download>ダウンロード</a>' +
+          '<button class="btn" onclick="openImportPanel(&quot;' + f.name + '&quot;)">インポート</button>' +
         '</div>' +
       '</div>';
     }).join('');

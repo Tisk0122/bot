@@ -16,12 +16,12 @@ export async function execute(interaction) {
     const current = getDmPreference(interaction.guild.id, interaction.user.id);
 
     const statusText =
-        current === 'in'  ? '🔔 受け取る' :
-        current === 'out' ? '🔕 受け取らない' :
-        '❔ 未設定';
+        current === 'in'  ? '受け取る' :
+        current === 'out' ? '受け取らない' :
+        '未設定';
 
     const embed = new EmbedBuilder()
-        .setTitle('📨 募集DM通知設定')
+        .setTitle('募集DM通知設定')
         .setDescription(
             'サーバーで募集(ゲームの参加者募集など)が作成されたとき、\n' +
             'DMで通知を受け取るかどうかを設定できます。\n\n' +
@@ -33,12 +33,10 @@ export async function execute(interaction) {
         new ButtonBuilder()
             .setCustomId(`pref_set:${interaction.guild.id}:in`)
             .setLabel('受け取る')
-            .setEmoji('🔔')
             .setStyle(current === 'in' ? ButtonStyle.Success : ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId(`pref_set:${interaction.guild.id}:out`)
             .setLabel('受け取らない')
-            .setEmoji('🔕')
             .setStyle(current === 'out' ? ButtonStyle.Danger : ButtonStyle.Secondary)
     );
 

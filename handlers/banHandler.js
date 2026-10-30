@@ -39,7 +39,7 @@ function loadBanData() {
         }
         if (fs.existsSync(DATA_FILE)) {
             const raw = fs.readFileSync(DATA_FILE, 'utf8');
-            return JSON.parse(raw);
+            return raw.trim() ? JSON.parse(raw) : {};
         }
     } catch (err) {
         console.error('[ERROR] BANデータ読み込み失敗:', err);
@@ -60,91 +60,125 @@ function saveBanData(data) {
 }
 
 // ==============================================
-// BANリストメッセージを作成・更新
+// BANリストのEmbedを構築する
 // ==============================================
-async function updateBanListMessage(channel, guild) {
-    try {
-        // 最新のBANリストを取得
-        const bans = await guild.bans.fetch();
+async function buildBanListEmbed(guild) {
+    const bans = await guild.bans.fetch();
 
-        const embed = new EmbedBuilder()
-            .setTitle('🚫 BANユーザーリスト')
-            .setDescription(
-                bans.size > 0
-                    ? `現在 **${bans.size}人** がBANされています。`
-                    : 'BANされているユーザーはいません。'
-            )
-            .setColor('#dc3545')
-            .setTimestamp()
-            .setFooter({ text: `${guild.name} BAN管理システム` });
+    const embed = new EmbedBuilder()
+        .setTitle('BANユーザーリスト')
+        .setDescription(
+            bans.size > 0
+                ? `現在 **${bans.size}人** がBANされています。`
+                : 'BANされているユーザーはいません。'
+        )
+        .setColor('#dc3545')
+        .setTimestamp()
+        .setFooter({ text: `${guild.name} BAN管理システム` });
 
-        if (bans.size > 0) {
-            const MAX_DISPLAY = 20;
-            const banList = [];
-            let index = 1;
+    if (bans.size > 0) {
+        const MAX_DISPLAY = 20;
+        const banList = [];
+        let index = 1;
 
-            for (const [, ban] of bans) {
-                const reason = ban.reason || '理由なし';
-                banList.push(
-                    `${index}. **${ban.user.tag}** (<@${ban.user.id}>)\n` +
-                    `   └ ID: \`${ban.user.id}\`\n` +
-                    `   └ 理由: ${reason}`
-                );
-                index++;
+        for (const [, ban] of bans) {
+            const reason = ban.reason || '理由なし';
+            banList.push(
+                `${index}. **${ban.user.tag}** (<@${ban.user.id}>)\n` +
+                `   ID: \`${ban.user.id}\`\n` +
+                `   理由: ${reason}`
+            );
+            index++;
 
-                if (index > MAX_DISPLAY) {
-                    banList.push(`\n... および **${bans.size - MAX_DISPLAY}件** のユーザー`);
-                    break;
-                }
+            if (index > MAX_DISPLAY) {
+                banList.push(`\n... および **${bans.size - MAX_DISPLAY}件** のユーザー`);
+                break;
             }
-
-            // 1024文字制限に対応するためフィールドを分割
-            const chunks = [];
-            let currentChunk = '';
-
-            for (const item of banList) {
-                const candidate = currentChunk + item + '\n\n';
-                if (candidate.length > 1000) {
-                    if (currentChunk) chunks.push(currentChunk.trim());
-                    currentChunk = item + '\n\n';
-                } else {
-                    currentChunk = candidate;
-                }
-            }
-            if (currentChunk.trim()) chunks.push(currentChunk.trim());
-
-            chunks.forEach((chunk, i) => {
-                embed.addFields({
-                    name:  i === 0 ? '📋 ユーザー一覧' : '\u200B',
-                    value: chunk
-                });
-            });
         }
 
-        // 既存メッセージを更新 or 新規作成
-        const banData  = loadBanData();
-        const msgId    = banData.banListMessageId;
+        // 1024文字制限に対応するためフィールドを分割
+        const chunks = [];
+        let currentChunk = '';
+
+        for (const item of banList) {
+            const candidate = currentChunk + item + '\n\n';
+            if (candidate.length > 1000) {
+                if (currentChunk) chunks.push(currentChunk.trim());
+                currentChunk = item + '\n\n';
+            } else {
+                currentChunk = candidate;
+            }
+        }
+        if (currentChunk.trim()) chunks.push(currentChunk.trim());
+
+        chunks.forEach((chunk, i) => {
+            embed.addFields({
+                name:  i === 0 ? 'ユーザー一覧' : '​',
+                value: chunk
+            });
+        });
+    }
+
+    return embed;
+}
+
+// ==============================================
+// BANリストメッセージを作成・更新
+// allowCreate: false の場合、既存メッセージが見つからなければ何もしない（起動時専用）
+// ==============================================
+async function updateBanListMessage(channel, guild, allowCreate = true) {
+    try {
+        const embed   = await buildBanListEmbed(guild);
+        const banData = loadBanData();
+        const msgId   = banData.banListMessageId;
         let   message;
 
         if (msgId) {
-            try {
-                message = await channel.messages.fetch(msgId);
+            // 保存されたIDでメッセージを取得して編集
+            message = await channel.messages.fetch(msgId).catch(() => null);
+            if (message) {
                 await message.edit({ embeds: [embed] });
                 console.log(`[INFO] BANリストメッセージを更新しました (ID: ${msgId})`);
-            } catch {
-                // メッセージが削除されていた場合は新規作成
-                console.warn('[WARNING] BANリストメッセージが見つかりません。新規作成します。');
-                message = await channel.send({ embeds: [embed] });
-                banData.banListMessageId = message.id;
-                saveBanData(banData);
-                console.log(`[INFO] BANリストメッセージを新規作成しました (ID: ${message.id})`);
+                return message;
             }
-        } else {
-            message = await channel.send({ embeds: [embed] });
-            banData.banListMessageId = message.id;
+            // IDが無効になっていた場合はクリア
+            console.warn(`[WARNING] 保存済みBANリストメッセージ(${msgId})が見つかりません。`);
+            delete banData.banListMessageId;
             saveBanData(banData);
-            console.log(`[INFO] BANリストメッセージを作成しました (ID: ${message.id})`);
         }
+
+        // 保存IDがない場合: チャンネル内から既存のBANリストメッセージを探す
+        try {
+            const recentMessages = await channel.messages.fetch({ limit: 20 });
+            for (const [, msg] of recentMessages) {
+                if (
+                    msg.author.id === channel.client.user.id &&
+                    msg.embeds.length > 0 &&
+                    msg.embeds[0].title === 'BANユーザーリスト'
+                ) {
+                    // 既存メッセージを発見 - IDを保存して更新
+                    await msg.edit({ embeds: [embed] });
+                    banData.banListMessageId = msg.id;
+                    saveBanData(banData);
+                    console.log(`[INFO] チャンネル内の既存BANリストメッセージを再利用しました (ID: ${msg.id})`);
+                    return msg;
+                }
+            }
+        } catch (err) {
+            console.error('[ERROR] チャンネルメッセージ検索失敗:', err.message);
+        }
+
+        // allowCreate が false の場合は新規作成しない（起動時に重複送信を防ぐ）
+        if (!allowCreate) {
+            console.log('[INFO] BANリストメッセージが存在しないため起動時の作成をスキップ。/setup または BAN操作で初回作成されます。');
+            return null;
+        }
+
+        // 新規作成
+        message = await channel.send({ embeds: [embed] });
+        banData.banListMessageId = message.id;
+        saveBanData(banData);
+        console.log(`[INFO] BANリストメッセージを新規作成しました (ID: ${message.id})`);
 
         return message;
     } catch (err) {
@@ -160,13 +194,13 @@ async function banUser(guild, userId, reason, executor) {
         // ユーザー情報を取得
         const user = await guild.client.users.fetch(userId).catch(() => null);
         if (!user) {
-            return { success: false, message: '❌ ユーザーが見つかりませんでした。IDを確認してください。' };
+            return { success: false, message: '指定されたIDのユーザーが見つかりませんでした。IDを確認してください。' };
         }
 
         // 既にBANされているか確認
         const existing = await guild.bans.fetch(userId).catch(() => null);
         if (existing) {
-            return { success: false, message: `❌ **${user.tag}** (<@${userId}>) は既にBANされています。` };
+            return { success: false, message: `**${user.tag}** (<@${userId}>) は既にBANされています。` };
         }
 
         // BAN実行
@@ -178,15 +212,15 @@ async function banUser(guild, userId, reason, executor) {
 
         return {
             success: true,
-            message: `✅ **${user.tag}** (<@${userId}>) をBANしました。\n📝 理由: ${reason}`,
+            message: `**${user.tag}** (<@${userId}>) をBANしました。\n理由: ${reason}`,
             user
         };
     } catch (err) {
         console.error('[ERROR] BAN実行失敗:', err);
         if (err.code === 50013) {
-            return { success: false, message: '❌ ボットに「メンバーをBAN」権限がありません。' };
+            return { success: false, message: 'ボットに「メンバーをBAN」権限がありません。' };
         }
-        return { success: false, message: `❌ BANに失敗しました: ${err.message}` };
+        return { success: false, message: `BANに失敗しました: ${err.message}` };
     }
 }
 
@@ -198,7 +232,7 @@ async function unbanUser(guild, userId, executor) {
         // BANされているか確認
         const ban = await guild.bans.fetch(userId).catch(() => null);
         if (!ban) {
-            return { success: false, message: '❌ このユーザーはBANされていません。' };
+            return { success: false, message: 'このユーザーはBANされていません。' };
         }
 
         // BAN解除
@@ -210,15 +244,15 @@ async function unbanUser(guild, userId, executor) {
 
         return {
             success: true,
-            message: `✅ **${ban.user.tag}** (<@${userId}>) のBANを解除しました。`,
+            message: `**${ban.user.tag}** (<@${userId}>) のBANを解除しました。`,
             user: ban.user
         };
     } catch (err) {
         console.error('[ERROR] BAN解除失敗:', err);
         if (err.code === 50013) {
-            return { success: false, message: '❌ ボットに「メンバーのBAN解除」権限がありません。' };
+            return { success: false, message: 'ボットに「メンバーのBAN解除」権限がありません。' };
         }
-        return { success: false, message: `❌ BAN解除に失敗しました: ${err.message}` };
+        return { success: false, message: `BAN解除に失敗しました: ${err.message}` };
     }
 }
 
@@ -252,7 +286,7 @@ export async function handleBanMessage(message) {
 
     // 管理者権限チェック
     if (!member.roles.cache.has(ADMIN_ROLE_ID)) {
-        const reply = await message.reply('❌ この操作を行う権限がありません。').catch(() => null);
+        const reply = await message.reply('この操作を行う権限がありません。').catch(() => null);
         autoDelete(message, reply, 3000);
         return;
     }
@@ -264,24 +298,24 @@ export async function handleBanMessage(message) {
     // ------------------------------------------
     if (/^!?help$/i.test(trimmed)) {
         const helpEmbed = new EmbedBuilder()
-            .setTitle('📋 BANシステム ヘルプ')
+            .setTitle('BANシステム ヘルプ')
             .setDescription('このチャンネルでユーザーのBAN・BAN解除を行えます。')
             .addFields(
                 {
-                    name:  '🔨 BANする',
+                    name:  'BANする',
                     value: '```\nユーザーID\n```\n```\nユーザーID 理由\n```\n例: `123456789012345678 荒らし行為`'
                 },
                 {
-                    name:  '✅ BAN解除する',
+                    name:  'BAN解除する',
                     value: '```\n!unban ユーザーID\n```\n```\nunban ユーザーID\n```\n例: `!unban 123456789012345678`'
                 },
                 {
-                    name:  '💡 ヒント',
+                    name:  'ヒント',
                     value: [
-                        '• ユーザーIDは右クリック →「IDをコピー」で取得できます',
-                        '• 理由は任意ですが記録のため入力を推奨します',
-                        '• メッセージは5秒後に自動削除されます',
-                        '• ヘルプは15秒後に自動削除されます'
+                        '- ユーザーIDは右クリック「IDをコピー」で取得できます',
+                        '- 理由は任意ですが記録のため入力を推奨します',
+                        '- メッセージは5秒後に自動削除されます',
+                        '- ヘルプは15秒後に自動削除されます'
                     ].join('\n')
                 }
             )
@@ -305,7 +339,7 @@ export async function handleBanMessage(message) {
         autoDelete(message, reply, 5000);
 
         if (result.success) {
-            await updateBanListMessage(channel, guild);
+            await updateBanListMessage(channel, guild, true);
         }
         return;
     }
@@ -322,7 +356,7 @@ export async function handleBanMessage(message) {
         autoDelete(message, reply, 5000);
 
         if (result.success) {
-            await updateBanListMessage(channel, guild);
+            await updateBanListMessage(channel, guild, true);
         }
         return;
     }
@@ -339,7 +373,7 @@ export async function handleBanMessage(message) {
         autoDelete(message, reply, 5000);
 
         if (result.success) {
-            await updateBanListMessage(channel, guild);
+            await updateBanListMessage(channel, guild, true);
         }
         return;
     }
@@ -347,12 +381,14 @@ export async function handleBanMessage(message) {
     // ------------------------------------------
     // 不明なコマンド
     // ------------------------------------------
-    const reply = await message.reply('❓ 無効なコマンドです。`!help` でヘルプを表示します。').catch(() => null);
+    const reply = await message.reply('無効なコマンドです。`!help` でヘルプを表示します。').catch(() => null);
     autoDelete(message, reply, 3000);
 }
 
 // ==============================================
 // 起動時にBANリストを初期化・表示
+// 既存メッセージがある場合は更新のみ行い、
+// 存在しない場合は新規作成しない（重複防止）
 // ==============================================
 export async function initializeBanList(client) {
     try {
@@ -368,7 +404,10 @@ export async function initializeBanList(client) {
         }
 
         const guild = channel.guild;
-        await updateBanListMessage(channel, guild);
+
+        // allowCreate = false: 起動時は既存メッセージの更新のみ（重複送信を防止）
+        // 既存メッセージが見つからない場合はスキップし、最初のBAN/UNBAN操作時に自動作成される
+        await updateBanListMessage(channel, guild, false);
 
         console.log('[SUCCESS] BANリストの初期化完了。');
     } catch (err) {

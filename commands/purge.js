@@ -34,7 +34,7 @@ export async function execute(interaction) {
         }
 
         if (filtered.length === 0) {
-            return interaction.editReply('❌ 削除対象のメッセージが見つかりませんでした。');
+            return interaction.editReply('削除対象のメッセージが見つかりませんでした。');
         }
 
         const twoWeeksAgo = Date.now() - 14 * 24 * 60 * 60 * 1000;
@@ -42,14 +42,14 @@ export async function execute(interaction) {
         const tooOld = filtered.length - deletable.length;
 
         if (deletable.length === 0) {
-            return interaction.editReply('❌ 2週間以上前のメッセージは一括削除できません。');
+            return interaction.editReply('2週間以上前のメッセージは一括削除できません。');
         }
 
         const deleted = await interaction.channel.bulkDelete(deletable, true);
 
-        let reply = `✅ **${deleted.size}件** のメッセージを削除しました。`;
+        let reply = `**${deleted.size}件** のメッセージを削除しました。`;
         if (tooOld > 0) {
-            reply += `\n⚠ 2週間以上前のメッセージ **${tooOld}件** はスキップされました。`;
+            reply += `\n2週間以上前のメッセージ **${tooOld}件** はスキップされました。`;
         }
 
         await interaction.editReply(reply);
@@ -62,6 +62,6 @@ export async function execute(interaction) {
         });
     } catch (err) {
         console.error('[ERROR] purge 実行エラー:', err);
-        await interaction.editReply('❌ メッセージの削除に失敗しました。ボットに「メッセージの管理」権限があるか確認してください。');
+        await interaction.editReply('メッセージの削除に失敗しました。ボットに「メッセージの管理」権限があるか確認してください。');
     }
 }

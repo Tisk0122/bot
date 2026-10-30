@@ -11,6 +11,8 @@ import { initAfkDetector } from './handlers/afkHandler.js';
 import { initMemberJoinNotifier } from './handlers/memberJoinHandler.js';
 import { handleNicknameMessage } from './handlers/nicknameHandler.js';
 import { mountDashboard } from './web/dashboardRoutes.js';
+import { initStudyVc } from './handlers/studyVcHandler.js';
+import { startRecruitmentCleanupScheduler } from './utils/recruitStore.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -69,7 +71,7 @@ function startKeepAlive() {
     const appUrl = process.env.APP_URL ? process.env.APP_URL.replace(/\/$/, '') : null;
 
     if (!appUrl) {
-        console.warn('[Keep-Alive] ⚠ APP_URL が未設定です。スリープ防止機能は無効です。');
+        console.warn('[Keep-Alive] [WARN] APP_URL が未設定です。スリープ防止機能は無効です。');
         console.warn('[Keep-Alive] .env に APP_URL=https://your-app-name.koyeb.app を設定してください。');
         return;
     }
@@ -90,16 +92,16 @@ function startKeepAlive() {
             });
             clearTimeout(timeoutId);
             if (res.ok) {
-                console.log(`[Keep-Alive] ✓ ${new Date().toLocaleString('ja-JP')} | Status: ${res.status}`);
+                console.log(`[Keep-Alive] [OK] ${new Date().toLocaleString('ja-JP')} | Status: ${res.status}`);
             } else {
-                console.warn(`[Keep-Alive] ⚠ レスポンスエラー | Status: ${res.status}`);
+                console.warn(`[Keep-Alive] [WARN] レスポンスエラー | Status: ${res.status}`);
             }
         } catch (err) {
             clearTimeout(timeoutId);
             if (err.name === 'AbortError') {
-                console.error('[Keep-Alive] ✗ タイムアウト (10秒)');
+                console.error('[Keep-Alive] [ERROR] タイムアウト (10秒)');
             } else {
-                console.error('[Keep-Alive] ✗ エラー:', err.message);
+                console.error('[Keep-Alive] [ERROR] エラー:', err.message);
             }
         }
     };
@@ -107,7 +109,7 @@ function startKeepAlive() {
     sendPing();
     setInterval(sendPing, 50_000);
 
-    console.log(`[Keep-Alive] ✓ 有効化 | 送信先: ${pingUrl} | 間隔: 50秒`);
+    console.log(`[Keep-Alive] [OK] 有効化 | 送信先: ${pingUrl} | 間隔: 50秒`);
 }
 
 // ==============================================
@@ -279,10 +281,16 @@ client.once('ready', async () => {
     // AFK自動検出開始
     initAfkDetector(client);
 
+    // おべんきょVC専用ハンドラー開始
+    initStudyVc(client);
+
+    // 募集の定期クリーンアップ開始（期限切れ募集を自動終了）
+    startRecruitmentCleanupScheduler(client);
+
     // 新規メンバー向け 募集DM通知の初期案内 開始
     initMemberJoinNotifier(client);
 
-    console.log('[SUCCESS] ✓ Bot初期化完了。全システム稼働中。');
+    console.log('[SUCCESS] Bot初期化完了。全システム稼働中。');
 });
 
 // ==============================================

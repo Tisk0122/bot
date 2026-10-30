@@ -1,12 +1,12 @@
 // ==============================================
 // utils/recruitStore.js
-// 募集(募集メッセージ)データと、各メンバーの
-// 「募集DM通知」受け取り設定を管理する
+// 募集データと各メンバーの「募集DM通知」受け取り設定を管理する
 // ==============================================
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'url';
+import { buildClosedRecruitEmbed, buildRecruitButtons, buildRecruitCloseButton } from './recruitEmbed.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
@@ -14,6 +14,9 @@ const __dirname  = path.dirname(__filename);
 const DATA_DIR      = path.join(__dirname, '..', 'data');
 const PREF_FILE      = path.join(DATA_DIR, 'dm_preferences.json');
 const RECRUIT_FILE   = path.join(DATA_DIR, 'recruitments.json');
+
+// デフォルトの募集有効期限 (24時間)
+export const DEFAULT_RECRUIT_DURATION_MS = 24 * 60 * 60 * 1000;
 
 // ==============================================
 // 共通: JSON読み書き
@@ -48,8 +51,6 @@ function saveJson(file, data) {
 
 // ==============================================
 // 募集DM通知の受け取り設定
-// 値: 'in' (受け取る) | 'out' (受け取らない) | 未設定
-// 構造: { [guildId]: { [userId]: 'in' | 'out' } }
 // ==============================================
 export function getDmPreference(guildId, userId) {
     const data = loadJson(PREF_FILE);
@@ -70,14 +71,6 @@ export function getAllPreferences(guildId) {
 
 // ==============================================
 // 募集データ
-// 構造: {
-//   [recruitId]: {
-//     id, guildId, channelId, messageId, hostId,
-//     game, description, datetime, capacity,
-//     createdAt, responses: { [userId]: 'join'|'decline'|'unsure' },
-//     dmMessages: { [userId]: { channelId, messageId } }
-//   }
-// }
 // ==============================================
 export function createRecruitment(id, recruitment) {
     const data = loadJson(RECRUIT_FILE);
@@ -113,4 +106,107 @@ export function getAllRecruitments(guildId) {
     return Object.fromEntries(
         Object.entries(data).filter(([, r]) => r.guildId === guildId)
     );
+}
+
+// ==============================================
+// 募集を終了する
+// - チャンネルのメッセージボタンを無効化・Embedを終了状態に更新
+// - DMメッセージも同様に更新
+// - 募集データを削除
+// ==============================================
+export async function closeRecruitment(recruitId, client, reason = '手動終了') {
+    const recruit = getRecruitment(recruitId);
+    if (!recruit) return false;
+
+    const closedEmbed = buildClosedRecruitEmbed(recruit, reason);
+
+    // チャンネルの元メッセージを更新
+    try {
+        const channel = await client.channels.fetch(recruit.channelId).catch(() => null);
+        if (channel) {
+            const message = await channel.messages.fetch(recruit.messageId).catch(() => null);
+            if (message) {
+                await message.edit({
+                    embeds: [closedEmbed],
+                    components: [] // ボタン全削除
+                });
+            }
+        }
+    } catch (err) {
+        console.error(`[ERROR] 募集終了メッセージ更新失敗 (チャンネル): ${err.message}`);
+    }
+
+    // DMメッセージも更新
+    if (recruit.dmMessages) {
+        for (const [userId, dmInfo] of Object.entries(recruit.dmMessages)) {
+            try {
+                const dmChannel = await client.channels.fetch(dmInfo.channelId).catch(() => null);
+                if (dmChannel) {
+                    const dmMessage = await dmChannel.messages.fetch(dmInfo.messageId).catch(() => null);
+                    if (dmMessage) {
+                        await dmMessage.edit({
+                            embeds: [buildClosedRecruitEmbed(recruit, reason)],
+                            components: []
+                        });
+                    }
+                }
+            } catch {
+                // DM更新失敗は無視
+            }
+        }
+    }
+
+    // 募集データを削除
+    deleteRecruitment(recruitId);
+    console.log(`[INFO] 募集終了: ${recruitId} | 理由: ${reason} | ゲーム: ${recruit.game}`);
+    return true;
+}
+
+// ==============================================
+// 期限切れの募集を一括クリーンアップする
+// index.js の ready イベント後に定期実行する
+// ==============================================
+export async function cleanupExpiredRecruitments(client) {
+    const data = loadJson(RECRUIT_FILE);
+    const now = Date.now();
+    let closed = 0;
+
+    for (const [id, recruit] of Object.entries(data)) {
+        if (!recruit.expiresAt) continue;
+        if (recruit.expiresAt > now) continue;
+
+        try {
+            await closeRecruitment(id, client, '有効期限切れ');
+            closed++;
+        } catch (err) {
+            console.error(`[ERROR] 期限切れ募集のクリーンアップ失敗 (${id}):`, err.message);
+        }
+    }
+
+    if (closed > 0) {
+        console.log(`[INFO] 期限切れ募集をクリーンアップしました: ${closed}件`);
+    }
+
+    return closed;
+}
+
+// ==============================================
+// 定期クリーンアップを開始する (5分ごと)
+// ==============================================
+export function startRecruitmentCleanupScheduler(client) {
+    const INTERVAL_MS = 5 * 60 * 1000; // 5分
+
+    // 起動直後に1回実行
+    cleanupExpiredRecruitments(client).catch(err => {
+        console.error('[ERROR] 初回募集クリーンアップ失敗:', err);
+    });
+
+    // 以降は5分ごとに実行
+    setInterval(() => {
+        cleanupExpiredRecruitments(client).catch(err => {
+            console.error('[ERROR] 定期募集クリーンアップ失敗:', err);
+        });
+    }, INTERVAL_MS);
+
+    console.log(`[INFO] 募集クリーンアップスケジューラー起動 (間隔: ${INTERVAL_MS / 60000}分)`);
 }

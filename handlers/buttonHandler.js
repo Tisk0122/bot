@@ -7,8 +7,8 @@
 import 'dotenv/config';
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import { logAction } from '../utils/logger.js';
-import { setDmPreference, getRecruitment, updateRecruitment } from '../utils/recruitStore.js';
-import { buildRecruitEmbed, buildRecruitButtons } from '../utils/recruitEmbed.js';
+import { setDmPreference, getRecruitment, updateRecruitment, closeRecruitment } from '../utils/recruitStore.js';
+import { buildRecruitEmbed, buildRecruitButtons, buildRecruitCloseButton } from '../utils/recruitEmbed.js';
 
 // --- 環境変数の読み込み ---
 const MODERATION_CHANNEL_ID = process.env.MODERATION_CHANNEL_ID;
@@ -32,14 +32,14 @@ async function handleVerifyUser(interaction) {
     // 環境変数チェック
     if (!MODERATION_CHANNEL_ID || !VERIFIED_ROLE_ID) {
         return interaction.reply({
-            content: '❌ エラー: 認証システムの設定が不完全です。管理者に連絡してください。',
+            content: 'エラー: 認証システムの設定が不完全です。管理者に連絡してください。',
             flags: 64
         });
     }
 
     // 既に認証済みかチェック
     if (member.roles.cache.has(VERIFIED_ROLE_ID)) {
-        return interaction.reply({ content: '✅ あなたはすでに認証済みです。', flags: 64 });
+        return interaction.reply({ content: 'あなたはすでに認証済みです。', flags: 64 });
     }
 
     // モデレーションチャンネルを取得
@@ -47,20 +47,20 @@ async function handleVerifyUser(interaction) {
     if (!moderationChannel) {
         console.error(`[ERROR] モデレーションチャンネルが見つかりません: ${MODERATION_CHANNEL_ID}`);
         return interaction.reply({
-            content: '❌ エラーが発生しました。管理者に連絡してください。',
+            content: 'エラーが発生しました。管理者に連絡してください。',
             flags: 64
         });
     }
 
     // 認証申請Embedを作成
     const embed = new EmbedBuilder()
-        .setTitle('📝 認証申請')
+        .setTitle('認証申請')
         .setDescription(`${member} (${member.user.tag}) が認証を申請しました。`)
         .setThumbnail(member.user.displayAvatarURL({ dynamic: true, size: 256 }))
         .addFields(
             { name: 'ユーザー名',       value: member.user.tag,                                                          inline: true },
             { name: 'ユーザーID',       value: member.id,                                                                inline: true },
-            { name: '\u200B',           value: '\u200B',                                                                 inline: true },
+            { name: '​',           value: '​',                                                                 inline: true },
             { name: 'アカウント作成日', value: `<t:${Math.floor(member.user.createdTimestamp / 1000)}:R>`,               inline: true },
             { name: 'サーバー参加日',   value: `<t:${Math.floor(member.joinedTimestamp / 1000)}:R>`,                     inline: true }
         )
@@ -74,26 +74,24 @@ async function handleVerifyUser(interaction) {
             new ButtonBuilder()
                 .setCustomId(`approve_user:${member.id}`)
                 .setLabel('承認')
-                .setStyle(ButtonStyle.Success)
-                .setEmoji('✅'),
+                .setStyle(ButtonStyle.Success),
             new ButtonBuilder()
                 .setCustomId(`deny_user:${member.id}`)
                 .setLabel('拒否')
                 .setStyle(ButtonStyle.Danger)
-                .setEmoji('❌')
         );
 
     try {
         await moderationChannel.send({ embeds: [embed], components: [actionRow] });
         console.log(`[INFO] 認証申請送信: ${member.user.tag} (${member.id})`);
         return interaction.reply({
-            content: '✅ 認証申請を送信しました。管理者の承認をお待ちください。',
+            content: '認証申請を送信しました。管理者の承認をお待ちください。',
             flags: 64
         });
     } catch (err) {
         console.error('[ERROR] モデレーションチャンネルへの送信失敗:', err);
         return interaction.reply({
-            content: '❌ エラー: 認証申請の送信に失敗しました。管理者に連絡してください。',
+            content: 'エラー: 認証申請の送信に失敗しました。管理者に連絡してください。',
             flags: 64
         });
     }
@@ -108,14 +106,14 @@ async function handleApproval(interaction, userId) {
     // 環境変数チェック
     if (!ADMIN_ROLE_ID || !VERIFIED_ROLE_ID) {
         return interaction.reply({
-            content: '❌ エラー: 認証システムの設定が不完全です。',
+            content: 'エラー: 認証システムの設定が不完全です。',
             flags: 64
         });
     }
 
     // 管理者権限チェック
     if (!member.roles.cache.has(ADMIN_ROLE_ID)) {
-        return interaction.reply({ content: '❌ この操作を行う権限がありません。', flags: 64 });
+        return interaction.reply({ content: 'この操作を行う権限がありません。', flags: 64 });
     }
 
     // 対象ユーザーを取得
@@ -124,7 +122,7 @@ async function handleApproval(interaction, userId) {
         // ユーザーがサーバーにいない場合はボタンを無効化して終了
         const disabledRow = disableAllButtons(interaction.message);
         return interaction.update({
-            content: '⚠ 対象ユーザーがサーバーに存在しません。',
+            content: '対象ユーザーがサーバーに存在しません。',
             components: [disabledRow]
         });
     }
@@ -134,7 +132,7 @@ async function handleApproval(interaction, userId) {
 
     if (!botMember.permissions.has('ManageRoles')) {
         return interaction.reply({
-            content: '❌ ボットに「ロールの管理」権限がありません。サーバー設定を確認してください。',
+            content: 'ボットに「ロールの管理」権限がありません。サーバー設定を確認してください。',
             flags: 64
         });
     }
@@ -143,7 +141,7 @@ async function handleApproval(interaction, userId) {
     const verifiedRole = guild.roles.cache.get(VERIFIED_ROLE_ID);
     if (!verifiedRole) {
         return interaction.reply({
-            content: '❌ 認証ロールが見つかりません。VERIFIED_ROLE_ID の設定を確認してください。',
+            content: '認証ロールが見つかりません。VERIFIED_ROLE_ID の設定を確認してください。',
             flags: 64
         });
     }
@@ -151,7 +149,7 @@ async function handleApproval(interaction, userId) {
     // ロール階層チェック
     if (botMember.roles.highest.position <= verifiedRole.position) {
         return interaction.reply({
-            content: `❌ ボットのロールが認証ロール「${verifiedRole.name}」より下位にあるため、ロールを付与できません。\nDiscordサーバー設定でボットのロールを認証ロールより上位に移動してください。`,
+            content: `ボットのロールが認証ロール「${verifiedRole.name}」より下位にあるため、ロールを付与できません。\nDiscordサーバー設定でボットのロールを認証ロールより上位に移動してください。`,
             flags: 64
         });
     }
@@ -182,7 +180,7 @@ async function handleApproval(interaction, userId) {
             await targetMember.send({
                 embeds: [
                     new EmbedBuilder()
-                        .setTitle('✅ 認証完了')
+                        .setTitle('認証完了')
                         .setDescription(`**${guild.name}** での認証が承認されました！\n\nサーバーの全チャンネルにアクセスできるようになりました。`)
                         .setColor('#28a745')
                         .setTimestamp()
@@ -200,9 +198,9 @@ async function handleApproval(interaction, userId) {
     } catch (err) {
         console.error('[ERROR] ロール付与失敗:', err);
 
-        let errorMessage = '❌ ロールの付与に失敗しました。';
+        let errorMessage = 'ロールの付与に失敗しました。';
         if (err.code === 50013) {
-            errorMessage = '❌ ボットに必要な権限がありません。「ロールの管理」権限とロール階層を確認してください。';
+            errorMessage = 'ボットに必要な権限がありません。「ロールの管理」権限とロール階層を確認してください。';
         }
 
         try {
@@ -226,14 +224,14 @@ async function handleDenial(interaction, userId) {
     // 環境変数チェック
     if (!ADMIN_ROLE_ID) {
         return interaction.reply({
-            content: '❌ エラー: 認証システムの設定が不完全です。',
+            content: 'エラー: 認証システムの設定が不完全です。',
             flags: 64
         });
     }
 
     // 管理者権限チェック
     if (!member.roles.cache.has(ADMIN_ROLE_ID)) {
-        return interaction.reply({ content: '❌ この操作を行う権限がありません。', flags: 64 });
+        return interaction.reply({ content: 'この操作を行う権限がありません。', flags: 64 });
     }
 
     // 対象ユーザーを取得
@@ -253,7 +251,7 @@ async function handleDenial(interaction, userId) {
             await targetMember.send({
                 embeds: [
                     new EmbedBuilder()
-                        .setTitle('❌ 認証拒否')
+                        .setTitle('認証拒否')
                         .setDescription(`**${guild.name}** での認証申請が拒否されました。\n\nご不明な点がある場合は、サーバーの管理者にお問い合わせください。`)
                         .setColor('#dc3545')
                         .setTimestamp()
@@ -281,12 +279,12 @@ async function handleDenial(interaction, userId) {
 async function handlePreferenceSet(interaction, guildId, value) {
     setDmPreference(guildId, interaction.user.id, value);
 
-    const label = value === 'in' ? '🔔 受け取る' : '🔕 受け取らない';
+    const label = value === 'in' ? '受け取る' : '受け取らない';
     const guild = interaction.client.guilds.cache.get(guildId);
     const guildName = guild ? guild.name : 'サーバー';
 
     const embed = new EmbedBuilder()
-        .setTitle('📨 募集DM通知設定')
+        .setTitle('募集DM通知設定')
         .setDescription(
             `**${guildName}** の募集DM通知設定を **${label}** に変更しました。\n\n` +
             '設定はいつでも `/recruit-notify` コマンドで変更できます。'
@@ -298,12 +296,10 @@ async function handlePreferenceSet(interaction, guildId, value) {
         new ButtonBuilder()
             .setCustomId(`pref_set:${guildId}:in`)
             .setLabel('受け取る')
-            .setEmoji('🔔')
             .setStyle(value === 'in' ? ButtonStyle.Success : ButtonStyle.Secondary),
         new ButtonBuilder()
             .setCustomId(`pref_set:${guildId}:out`)
             .setLabel('受け取らない')
-            .setEmoji('🔕')
             .setStyle(value === 'out' ? ButtonStyle.Danger : ButtonStyle.Secondary)
     );
 
@@ -326,7 +322,7 @@ async function handleRecruitResponse(interaction, recruitId, action) {
 
     if (!recruit) {
         return interaction.reply({
-            content: '❌ この募集は見つかりませんでした（削除されたか、期限切れの可能性があります）。',
+            content: 'この募集は見つかりませんでした（削除されたか、期限切れの可能性があります）。',
             flags: 64
         }).catch(() => {});
     }
@@ -337,7 +333,7 @@ async function handleRecruitResponse(interaction, recruitId, action) {
         const alreadyJoined = recruit.responses?.[interaction.user.id] === 'join';
         if (!alreadyJoined && currentJoinCount >= recruit.capacity) {
             return interaction.reply({
-                content: `⚠ この募集は定員 (${recruit.capacity}人) に達しています。「わからない」などでの意思表示は引き続き可能です。`,
+                content: `この募集は定員 (${recruit.capacity}人) に達しています。「わからない」などでの意思表示は引き続き可能です。`,
                 flags: 64
             }).catch(() => {});
         }
@@ -350,7 +346,7 @@ async function handleRecruitResponse(interaction, recruitId, action) {
 
     if (!updated) {
         return interaction.reply({
-            content: '❌ 募集データの更新に失敗しました。もう一度お試しください。',
+            content: '募集データの更新に失敗しました。もう一度お試しください。',
             flags: 64
         }).catch(() => {});
     }
@@ -359,8 +355,14 @@ async function handleRecruitResponse(interaction, recruitId, action) {
     const row   = buildRecruitButtons(recruitId);
 
     // クリックされたメッセージ自体を更新
+    // チャンネルメッセージには終了ボタンも含める、DMには含めない
+    const isInGuild = interaction.guild !== null;
+    const components = isInGuild
+        ? [row, buildRecruitCloseButton(recruitId)]
+        : [row];
+
     try {
-        await interaction.update({ embeds: [embed], components: [row] });
+        await interaction.update({ embeds: [embed], components });
     } catch (err) {
         console.error('[ERROR] 募集メッセージ更新失敗 (クリック元):', err);
     }
@@ -378,13 +380,56 @@ async function handleRecruitResponse(interaction, recruitId, action) {
         }
     }
 
-    // DMでの回答の場合は、わかりやすく完了メッセージを追加送信
+    // DMでの回答の場合は完了メッセージを追加送信
     if (interaction.channel?.isDMBased?.()) {
-        const label = { join: '✅ 参加する', decline: '❌ 参加しない', unsure: '🤔 わからない' }[action];
-        await interaction.followUp({ content: `${label} で回答を記録しました。`, flags: 64 }).catch(() => {});
+        const label = { join: '参加する', decline: '参加しない', unsure: 'わからない' }[action];
+        await interaction.followUp({ content: `「${label}」で回答を記録しました。`, flags: 64 }).catch(() => {});
     }
 
     console.log(`[INFO] 募集回答: ${interaction.user.tag} (${interaction.user.id}) -> ${action} | 募集ID: ${recruitId}`);
+}
+
+// ==============================================
+// 募集終了ボタン処理 (主催者または管理者のみ)
+// customId: recruit_close:<recruitId>
+// ==============================================
+async function handleRecruitClose(interaction, recruitId) {
+    const recruit = getRecruitment(recruitId);
+
+    if (!recruit) {
+        return interaction.reply({
+            content: 'この募集は見つかりませんでした（すでに終了している可能性があります）。',
+            flags: 64
+        }).catch(() => {});
+    }
+
+    // 主催者または管理者のみ終了可能
+    const isHost  = recruit.hostId === interaction.user.id;
+    const isAdmin = ADMIN_ROLE_ID && interaction.member?.roles.cache.has(ADMIN_ROLE_ID);
+
+    if (!isHost && !isAdmin) {
+        return interaction.reply({
+            content: '募集を終了できるのは主催者または管理者のみです。',
+            flags: 64
+        }).catch(() => {});
+    }
+
+    // 終了処理
+    const closed = await closeRecruitment(recruitId, interaction.client, `${interaction.user.tag} が手動終了`);
+
+    if (closed) {
+        await interaction.reply({
+            content: `「${recruit.game}」の募集を終了しました。`,
+            flags: 64
+        }).catch(() => {});
+    } else {
+        await interaction.reply({
+            content: '募集の終了処理中にエラーが発生しました。',
+            flags: 64
+        }).catch(() => {});
+    }
+
+    console.log(`[INFO] 募集手動終了: ${interaction.user.tag} | 募集ID: ${recruitId} | ゲーム: ${recruit.game}`);
 }
 
 // ==============================================
@@ -392,7 +437,9 @@ async function handleRecruitResponse(interaction, recruitId, action) {
 // ==============================================
 function disableAllButtons(message) {
     const disabledRow = new ActionRowBuilder();
-    message.components[0].components.forEach(component => {
+    const firstRow = message.components?.[0];
+    if (!firstRow) return disabledRow;
+    firstRow.components.forEach(component => {
         disabledRow.addComponents(ButtonBuilder.from(component).setDisabled(true));
     });
     return disabledRow;
@@ -422,6 +469,10 @@ export async function handleButtonInteraction(interaction) {
     } else if (customId.startsWith('recruit_resp:')) {
         const [, recruitId, action] = customId.split(':');
         await handleRecruitResponse(interaction, recruitId, action);
+
+    } else if (customId.startsWith('recruit_close:')) {
+        const recruitId = customId.split(':')[1];
+        await handleRecruitClose(interaction, recruitId);
 
     } else {
         console.warn(`[WARNING] 未知のボタンインタラクション: ${customId}`);

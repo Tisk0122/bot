@@ -46,7 +46,7 @@ export async function execute(interaction) {
     // 環境変数チェック
     if (!VERIFICATION_CHANNEL_ID) {
         return interaction.reply({
-            content: '❌ エラー: `VERIFICATION_CHANNEL_ID` が環境変数に設定されていません。`.env` を確認してください。',
+            content: 'エラー: `VERIFICATION_CHANNEL_ID` が環境変数に設定されていません。`.env` を確認してください。',
             ephemeral: true
         });
     }
@@ -54,14 +54,14 @@ export async function execute(interaction) {
     // 指定されたチャンネルが認証チャンネルと一致するか確認
     if (channel.id !== VERIFICATION_CHANNEL_ID) {
         return interaction.reply({
-            content: `❌ 指定したチャンネルが認証チャンネルと異なります。\n認証チャンネル: <#${VERIFICATION_CHANNEL_ID}> を指定してください。`,
+            content: `指定したチャンネルが認証チャンネルと異なります。\n認証チャンネル: <#${VERIFICATION_CHANNEL_ID}> を指定してください。`,
             ephemeral: true
         });
     }
 
     // 認証ボードのEmbedを作成
     const embed = new EmbedBuilder()
-        .setTitle('🔐 サーバー認証')
+        .setTitle('サーバー認証')
         .setDescription(
             '下のボタンを押してサーバーメンバーとして認証してください。\n\n' +
             '認証が完了すると、管理者による承認後にサーバーの全チャンネルにアクセスできるようになります。'
@@ -75,9 +75,8 @@ export async function execute(interaction) {
         .addComponents(
             new ButtonBuilder()
                 .setCustomId('verify_user_button')
-                .setLabel('✓ 認証する')
+                .setLabel('認証する')
                 .setStyle(ButtonStyle.Success)
-                .setEmoji('🔓')
         );
 
     try {
@@ -86,13 +85,13 @@ export async function execute(interaction) {
         console.log(`[INFO] 認証ボードを設置しました: #${channel.name} (${channel.id}) | 実行者: ${interaction.user.tag}`);
 
         return interaction.reply({
-            content: `✅ <#${channel.id}> に認証ボードを設置しました。`,
+            content: `<#${channel.id}> に認証ボードを設置しました。`,
             ephemeral: true
         });
     } catch (err) {
         console.error('[ERROR] 認証ボードの設置失敗:', err);
         return interaction.reply({
-            content: '❌ エラー: 認証ボードの設置に失敗しました。ボットに「メッセージを送信」権限があるか確認してください。',
+            content: 'エラー: 認証ボードの設置に失敗しました。ボットに「メッセージを送信」権限があるか確認してください。',
             ephemeral: true
         });
     }

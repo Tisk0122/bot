@@ -67,27 +67,51 @@ async function sendLog(client, embed) {
 
 // ==============================================
 // 入室制限チェック: ロールを持っていない場合は切断してDM通知
+//
+// 【修正点】
+//   以前は guild.roles.cache.find() を使っていたが、
+//   起動直後はロールキャッシュが未構築の場合があり
+//   role が undefined → !role === true → 入室OK と誤判定していた。
+//   guild.roles.fetch() で必ず最新情報をAPIから取得することで修正。
 // ==============================================
 async function checkAndEnforceRole(member) {
-    const role = member.guild.roles.cache.find(
-        r => r.name.toLowerCase() === STUDY_ROLE_NAME.toLowerCase()
-    );
+    // キャッシュに頼らず API から最新のロール一覧を取得する
+    const roles = await member.guild.roles.fetch().catch(() => null);
+    if (!roles) {
+        console.warn('[Study] ロール一覧の取得に失敗しました。入室を許可します。');
+        return false;
+    }
 
-    // ロール自体がサーバーに存在しない、またはメンバーがロールを持っている → 入室OK
-    if (!role || member.roles.cache.has(role.id)) return false;
+    const role = roles.find(r => r.name.toLowerCase() === STUDY_ROLE_NAME.toLowerCase());
+
+    // ロール自体がサーバーに存在しない → 入室OK
+    if (!role) {
+        console.warn(`[Study] ロール「${STUDY_ROLE_NAME}」がサーバーに存在しません。入室を許可します。`);
+        return false;
+    }
+
+    // メンバー情報もキャッシュに頼らず最新を取得する
+    const freshMember = await member.guild.members.fetch(member.id).catch(() => null);
+    if (!freshMember) {
+        console.warn(`[Study] メンバー情報の取得に失敗しました (${member.id})。入室を許可します。`);
+        return false;
+    }
+
+    // ロールを持っている → 入室OK
+    if (freshMember.roles.cache.has(role.id)) return false;
 
     // ロールを持っていない → 切断
     try {
-        await member.voice.disconnect('おべんきょVC: 勉強ロールなし');
-        console.log(`[Study] 入室拒否（ロールなし）: ${member.user.tag} (${member.id})`);
+        await freshMember.voice.disconnect('おべんきょVC: 勉強ロールなし');
+        console.log(`[Study] 入室拒否（ロールなし）: ${freshMember.user.tag} (${freshMember.id})`);
     } catch (err) {
-        console.error(`[Study] 切断失敗 (${member.user.tag}):`, err.message);
+        console.error(`[Study] 切断失敗 (${freshMember.user.tag}):`, err.message);
         return true; // 切断失敗でも以降の処理はスキップ
     }
 
     // 切断理由をDMで通知
     try {
-        await member.send({
+        await freshMember.send({
             embeds: [
                 new EmbedBuilder()
                     .setTitle('おべんきょVC - 入室できません')
@@ -222,11 +246,22 @@ export function getStudyVcStatus() {
 
 // ==============================================
 // 初期化 (index.js の ready イベントから呼ぶ)
+//
+// 【修正点】
+//   以前は initStudyVc 内で client.once('ready') をネストして登録していたが、
+//   index.js の ready ハンドラ内から initStudyVc が呼ばれるため
+//   ready はすでに発火済みであり、ネストした once('ready') は
+//   永遠に実行されなかった。
+//
+//   修正後は initStudyVc 自体を async にし、起動時の既存ユーザー確認を
+//   client.once('ready') のネストなしに直接実行する。
+//   index.js 側では await initStudyVc(client) と呼ぶこと。
 // ==============================================
-export function initStudyVc(client) {
+export async function initStudyVc(client) {
     console.log(`[Study] おべんきょVC機能を有効化 | VC ID: ${STUDY_VC_ID}`);
     console.log(`[Study] ログチャンネル: ${STUDY_LOG_CHANNEL_ID} (サイレント送信)`);
 
+    // voiceStateUpdate リスナーを登録
     client.on('voiceStateUpdate', async (oldState, newState) => {
         // ボット自身は無視
         if (newState.id === client.user.id) return;
@@ -248,24 +283,24 @@ export function initStudyVc(client) {
     });
 
     // 起動時に既にVCに参加中のユーザーのセッションを引き継ぎ
-    client.once('ready', async () => {
-        for (const [, guild] of client.guilds.cache) {
-            try {
-                await guild.members.fetch();
-            } catch {
-                continue;
-            }
-            for (const [, member] of guild.members.cache) {
-                if (member.id === client.user.id) continue;
-                if (member.voice.channel?.id !== STUDY_VC_ID) continue;
-
-                // 起動時にもロールチェック
-                const wasKicked = await checkAndEnforceRole(member).catch(() => false);
-                if (wasKicked) continue;
-
-                sessions.set(member.id, { joinedAt: Date.now() });
-                console.log(`[Study] 起動時セッション引き継ぎ: ${member.user.tag}`);
-            }
+    // 【修正】client.once('ready') のネストを廃止し、ここで直接実行する
+    //         （index.js の ready ハンドラ内から呼ばれるため ready は発火済み）
+    for (const [, guild] of client.guilds.cache) {
+        try {
+            await guild.members.fetch(); // メンバーキャッシュを確実に構築
+        } catch {
+            continue;
         }
-    });
+        for (const [, member] of guild.members.cache) {
+            if (member.id === client.user.id) continue;
+            if (member.voice.channel?.id !== STUDY_VC_ID) continue;
+
+            // 起動時にもロールチェック（checkAndEnforceRole 内で API 取得）
+            const wasKicked = await checkAndEnforceRole(member).catch(() => false);
+            if (wasKicked) continue;
+
+            sessions.set(member.id, { joinedAt: Date.now() });
+            console.log(`[Study] 起動時セッション引き継ぎ: ${member.user.tag}`);
+        }
+    }
 }

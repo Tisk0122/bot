@@ -1,12 +1,12 @@
 // ==============================================
 // web/dashboardRoutes.js
-// 管理者ダッシュボード (/admin) のルーティングを
-// 既存のExpressアプリにマウントする
+// 管理者ダッシュボード (/admin) のルーティング
 // ==============================================
 
 import express from 'express';
 import { createDashboardAuth } from '../utils/dashboardAuth.js';
-import { getAllPreferences, getAllRecruitments } from '../utils/recruitStore.js';
+import { getAllPreferences, getAllRecruitments, closeRecruitment, deleteRecruitment } from '../utils/recruitStore.js';
+import { getAllStudyRecords, deleteStudyRecord } from '../utils/studyRoleStore.js';
 import { readDataFile, writeDataFile, getDataFileStats, ALLOWED_FILES } from '../utils/dataFiles.js';
 import { DASHBOARD_HTML } from './dashboardHtml.js';
 
@@ -49,9 +49,8 @@ export function mountDashboard(app, client) {
     router.get('/api/preferences', async (_req, res) => {
         try {
             if (!guildId) return res.status(400).json({ error: 'GUILD_ID が設定されていません。' });
-
             const guild = client.guilds.cache.get(guildId);
-            if (!guild) return res.status(404).json({ error: 'ギルドが見つかりません（Botがまだ準備できていない可能性があります）。' });
+            if (!guild) return res.status(404).json({ error: 'ギルドが見つかりません。' });
 
             const members = await guild.members.fetch();
             const prefs = getAllPreferences(guildId);
@@ -70,6 +69,27 @@ export function mountDashboard(app, client) {
             res.json({ total: list.length, members: list });
         } catch (err) {
             console.error('[ERROR] /admin/api/preferences:', err);
+            res.status(500).json({ error: err.message });
+        }
+    });
+
+    // ------------------------------------------
+    // 通知設定の削除（リセット）
+    // ------------------------------------------
+    router.delete('/api/preferences/:userId', async (req, res) => {
+        try {
+            if (!guildId) return res.status(400).json({ error: 'GUILD_ID が設定されていません。' });
+            const { readDataFile: _, writeDataFile: wdf } = await import('../utils/dataFiles.js');
+            const raw = readDataFile('dm_preferences.json');
+            const data = JSON.parse(raw);
+            if (data[guildId] && data[guildId][req.params.userId]) {
+                delete data[guildId][req.params.userId];
+                writeDataFile('dm_preferences.json', JSON.stringify(data));
+                return res.json({ success: true });
+            }
+            res.json({ success: false, message: '該当ユーザーの設定が見つかりません。' });
+        } catch (err) {
+            console.error('[ERROR] DELETE /admin/api/preferences:', err);
             res.status(500).json({ error: err.message });
         }
     });
@@ -98,12 +118,93 @@ export function mountDashboard(app, client) {
                         channelId: r.channelId,
                         messageId: r.messageId,
                         createdAt: r.createdAt,
+                        expiresAt: r.expiresAt,
                         counts
                     };
                 });
             res.json({ total: list.length, recruitments: list });
         } catch (err) {
             console.error('[ERROR] /admin/api/recruitments:', err);
+            res.status(500).json({ error: err.message });
+        }
+    });
+
+    // ------------------------------------------
+    // 募集を強制終了（クローズ）
+    // ------------------------------------------
+    router.post('/api/recruitments/:id/close', async (req, res) => {
+        try {
+            const result = await closeRecruitment(req.params.id, client, 'ダッシュボードから手動終了');
+            if (!result) return res.status(404).json({ error: '該当する募集が見つかりません。' });
+            res.json({ success: true });
+        } catch (err) {
+            console.error('[ERROR] POST /admin/api/recruitments/:id/close:', err);
+            res.status(500).json({ error: err.message });
+        }
+    });
+
+    // ------------------------------------------
+    // 募集を削除（データのみ、メッセージ更新なし）
+    // ------------------------------------------
+    router.delete('/api/recruitments/:id', (req, res) => {
+        try {
+            const result = deleteRecruitment(req.params.id);
+            if (!result) return res.status(404).json({ error: '該当する募集が見つかりません。' });
+            res.json({ success: true });
+        } catch (err) {
+            console.error('[ERROR] DELETE /admin/api/recruitments/:id:', err);
+            res.status(500).json({ error: err.message });
+        }
+    });
+
+    // ------------------------------------------
+    // 勉強ロール保持者一覧
+    // ------------------------------------------
+    router.get('/api/study-roles', async (_req, res) => {
+        try {
+            if (!guildId) return res.status(400).json({ error: 'GUILD_ID が設定されていません。' });
+            const guild = client.guilds.cache.get(guildId);
+
+            const records = getAllStudyRecords(guildId);
+            const list = [];
+
+            for (const [userId, record] of Object.entries(records)) {
+                let tag = userId;
+                let displayName = userId;
+                let avatarUrl = null;
+                try {
+                    if (guild) {
+                        const member = guild.members.cache.get(userId)
+                            || await guild.members.fetch(userId).catch(() => null);
+                        if (member) {
+                            tag = member.user.tag;
+                            displayName = member.displayName;
+                            avatarUrl = member.user.displayAvatarURL({ size: 64 });
+                        }
+                    }
+                } catch { /* 退鯖済みユーザーは無視 */ }
+                list.push({ userId, tag, displayName, avatarUrl, ...record });
+            }
+
+            list.sort((a, b) => (b.assignedAt || 0) - (a.assignedAt || 0));
+            res.json({ total: list.length, records: list });
+        } catch (err) {
+            console.error('[ERROR] /admin/api/study-roles:', err);
+            res.status(500).json({ error: err.message });
+        }
+    });
+
+    // ------------------------------------------
+    // 勉強ロール記録を削除
+    // ------------------------------------------
+    router.delete('/api/study-roles/:userId', (req, res) => {
+        try {
+            if (!guildId) return res.status(400).json({ error: 'GUILD_ID が設定されていません。' });
+            const result = deleteStudyRecord(guildId, req.params.userId);
+            if (!result) return res.status(404).json({ error: '該当するレコードが見つかりません。' });
+            res.json({ success: true });
+        } catch (err) {
+            console.error('[ERROR] DELETE /admin/api/study-roles/:userId:', err);
             res.status(500).json({ error: err.message });
         }
     });
@@ -121,7 +222,7 @@ export function mountDashboard(app, client) {
     });
 
     // ------------------------------------------
-    // データファイルのエクスポート (ダウンロード/コピー用)
+    // データファイルのエクスポート
     // ------------------------------------------
     router.get('/api/export/:file', (req, res) => {
         try {
@@ -134,7 +235,7 @@ export function mountDashboard(app, client) {
     });
 
     // ------------------------------------------
-    // データファイルのインポート (プロジェクト更新時の引き継ぎ用)
+    // データファイルのインポート
     // ------------------------------------------
     router.post('/api/import/:file', express.text({ type: '*/*', limit: '2mb' }), (req, res) => {
         try {
@@ -147,5 +248,5 @@ export function mountDashboard(app, client) {
     });
 
     app.use('/admin', router);
-    console.log('[INFO] 管理者ダッシュボードをマウントしました: /admin (要 DASHBOARD_PASSWORD 環境変数)');
+    console.log('[INFO] 管理者ダッシュボードをマウントしました: /admin');
 }

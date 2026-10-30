@@ -282,7 +282,7 @@ client.once('ready', async () => {
     initAfkDetector(client);
 
     // おべんきょVC専用ハンドラー開始
-    initStudyVc(client);
+    await initStudyVc(client);
 
     // 募集の定期クリーンアップ開始（期限切れ募集を自動終了）
     startRecruitmentCleanupScheduler(client);

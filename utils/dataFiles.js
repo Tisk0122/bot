@@ -18,7 +18,8 @@ const DATA_DIR   = path.join(__dirname, '..', 'data');
 export const ALLOWED_FILES = [
     'dm_preferences.json',
     'recruitments.json',
-    'ban_data.json'
+    'ban_data.json',
+    'study_roles.json'
 ];
 
 function assertAllowed(name) {

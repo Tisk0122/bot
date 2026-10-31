@@ -11,7 +11,7 @@ import {
 } from 'discord.js';
 import {
     buildPanelEmbed,
-    buildBoardEmbed,
+    buildBoardMessage,
     buildPanelComponents,
     savePanelMessageIds,
     getPanelConfig,
@@ -61,6 +61,9 @@ async function handleSetup(interaction) {
     await interaction.deferReply({ flags: 64 });
 
     try {
+        const guildStatuses = getGuildStatuses(guild.id);
+        const boardMessage = await buildBoardMessage(guildStatuses);
+
         // 既存パネルがあれば削除を試みる
         const existing = getPanelConfig(guild.id);
         if (existing?.channelId === channel.id) {
@@ -71,12 +74,8 @@ async function handleSetup(interaction) {
             }
         }
 
-        const guildStatuses = getGuildStatuses(guild.id);
-
         // ① ボードメッセージ（上）
-        const boardMsg = await channel.send({
-            embeds: [buildBoardEmbed(guildStatuses)]
-        });
+        const boardMsg = await channel.send(boardMessage);
 
         // ② パネルメッセージ（下）
         const panelMsg = await channel.send({

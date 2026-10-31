@@ -6,6 +6,7 @@
 import express from 'express';
 import { randomUUID } from 'node:crypto';
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, EmbedBuilder, PermissionFlagsBits } from 'discord.js';
+import { Routes } from 'discord-api-types/v10';
 import { createDashboardAuth } from '../utils/dashboardAuth.js';
 import { getAllPreferences, getAllRecruitments, closeRecruitment, deleteRecruitment, getAllDmPrompts, markDmPrompted, clearDmPrompted, setDmPreference, createRecruitment } from '../utils/recruitStore.js';
 import { getAllStudyRecords, getStudyRecord, deleteStudyRecord, setStudyRecord } from '../utils/studyRoleStore.js';
@@ -69,14 +70,32 @@ export function mountDashboard(app, client) {
             const guild = client.guilds.cache.get(guildId);
             if (!guild) return res.status(404).json({ error: 'ギルドが見つかりません。' });
 
-            // ダッシュボードの表示のたびに全メンバー取得を呼ぶと、
-            // Gateway Opcode 8 (Request Guild Members) が発生して制限される。
-            // 表示はキャッシュと保存済み設定だけで構築し、ネットワーク取得を行わない。
+            // Gateway の全メンバー要求は使わず、Discord REST API をページングして取得する。
+            const discordMembers = [];
+            let after;
+            do {
+                const query = new URLSearchParams({ limit: '1000' });
+                if (after) query.set('after', after);
+
+                const page = await client.rest.get(Routes.guildMembers(guildId), { query });
+                if (!Array.isArray(page)) {
+                    throw new Error('Discordからメンバー一覧を正しく取得できませんでした。');
+                }
+                discordMembers.push(...page);
+
+                const lastUserId = page.at(-1)?.user?.id;
+                if (page.length === 1000 && (!lastUserId || lastUserId === after)) {
+                    throw new Error('Discordのメンバー一覧をページングできませんでした。');
+                }
+                after = page.length === 1000 ? lastUserId : null;
+            } while (after);
+
             const cachedMembers = guild.members.cache;
             const prefs = getAllPreferences(guildId);
             const prompted = getAllDmPrompts(guildId);
+            const membersById = new Map(discordMembers.map(member => [member.user.id, member]));
             const memberIds = new Set([
-                ...cachedMembers.keys(),
+                ...membersById.keys(),
                 ...Object.keys(prefs),
                 ...Object.keys(prompted)
             ]);
@@ -84,17 +103,34 @@ export function mountDashboard(app, client) {
             const list = [];
             for (const userId of memberIds) {
                 const member = cachedMembers.get(userId) ?? null;
-                const user = member?.user ?? client.users.cache.get(userId) ?? null;
-                if (user?.bot) continue;
+                const discordMember = membersById.get(userId) ?? null;
+                const cachedUser = member?.user ?? client.users.cache.get(userId) ?? null;
+                const user = discordMember?.user;
+                if (user?.bot || (!user && cachedUser?.bot)) continue;
+
+                const isGuildMember = Boolean(discordMember);
+                const avatarUrl = discordMember?.avatar
+                    ? client.rest.cdn.guildMemberAvatar(guildId, userId, discordMember.avatar, { size: 64 })
+                    : user?.avatar
+                        ? client.rest.cdn.avatar(userId, user.avatar, { size: 64 })
+                        : member?.displayAvatarURL?.({ size: 64 })
+                            ?? cachedUser?.displayAvatarURL?.({ size: 64 })
+                            ?? null;
 
                 list.push({
                     userId,
-                    tag: user?.tag ?? `ID: ${userId}`,
-                    displayName: member?.displayName ?? user?.globalName ?? user?.username ?? 'メンバー情報未取得',
-                    avatarUrl: user?.displayAvatarURL?.({ size: 64 }) ?? null,
+                    tag: cachedUser?.tag ?? user?.username ?? `ID: ${userId}`,
+                    displayName: discordMember?.nick
+                        ?? user?.global_name
+                        ?? user?.username
+                        ?? member?.displayName
+                        ?? cachedUser?.globalName
+                        ?? cachedUser?.username
+                        ?? (isGuildMember ? 'ユーザー情報なし' : 'サーバー外ユーザー'),
+                    avatarUrl,
                     preference: prefs[userId] || 'unset',
                     promptedAt: prompted[userId] || null,
-                    memberCached: Boolean(member)
+                    isGuildMember
                 });
             }
 
@@ -104,8 +140,8 @@ export function mountDashboard(app, client) {
                 total: list.length,
                 members: list,
                 guildMemberCount: guild.memberCount ?? null,
-                cachedMemberCount: cachedMembers.size,
-                cacheOnly: true
+                fetchedMemberCount: discordMembers.length,
+                cachedMemberCount: cachedMembers.size
             });
         } catch (err) {
             console.error('[ERROR] /admin/api/preferences:', err);

@@ -1052,12 +1052,10 @@ let prefData = [];
 function updatePreferenceCacheNote(data) {
   const note = document.getElementById('pref-cache-note');
   if (!note) return;
-  if (data?.cacheOnly) {
+  if (Number.isFinite(Number(data?.fetchedMemberCount))) {
+    const fetched = Number(data.fetchedMemberCount);
     const cached = Number(data.cachedMemberCount || 0);
-    const total = data.guildMemberCount;
-    note.textContent = Number.isFinite(Number(total))
-      ? 'メンバーキャッシュ ' + cached.toLocaleString('ja-JP') + ' / サーバー人数 ' + Number(total).toLocaleString('ja-JP') + '。未キャッシュのユーザーは保存済み設定のIDで表示します。'
-      : 'キャッシュ済みメンバーと保存済み設定を表示しています。';
+    note.textContent = 'Discordからサーバーメンバー ' + fetched.toLocaleString('ja-JP') + ' 人を取得しました（Bot内キャッシュ ' + cached.toLocaleString('ja-JP') + ' 人）。保存済み設定のサーバー外ユーザーも一覧に含みます。';
   } else {
     note.textContent = 'メンバーごとの通知受け取り設定一覧です';
   }
@@ -1105,7 +1103,7 @@ function renderPreferences() {
     const pillClass = m.preference === 'in' ? 'pill-green' : m.preference === 'out' ? 'pill-red' : m.promptedAt ? 'pill-accent' : 'pill-gray';
     const pillLabel = m.preference === 'in' ? '受け取る' : m.preference === 'out' ? '受け取らない' : m.promptedAt ? '案内済・未回答' : '未設定';
     return '<tr id="pref-row-' + m.userId + '">' +
-      '<td><div class="user-cell"><img class="avatar" src="' + esc(m.avatarUrl) + '" onerror="this.remove()"><span class="user-name">' + esc(m.displayName) + '</span></div></td>' +
+      '<td><div class="user-cell">' + (m.avatarUrl ? '<img class="avatar" src="' + esc(m.avatarUrl) + '" onerror="this.remove()">' : '') + '<span class="user-name">' + esc(m.displayName) + '</span>' + (m.isGuildMember ? '' : '<span class="pill pill-gray">サーバー外</span>') + '</div></td>' +
       '<td style="font-family:monospace;font-size:12px;color:var(--text3)">' + m.userId + '</td>' +
       '<td><span class="pill ' + pillClass + '">' + pillLabel + '</span></td>' +
       '<td class="actions-cell"><div style="display:flex;align-items:center;gap:6px">' +

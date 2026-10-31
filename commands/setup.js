@@ -5,6 +5,7 @@
 // ==============================================
 
 import 'dotenv/config';
+import { getGuildConfig } from '../utils/guildConfigStore.js';
 import {
     SlashCommandBuilder,
     ChannelType,
@@ -16,11 +17,6 @@ import {
 } from 'discord.js';
 
 // --- 環境変数の読み込み ---
-const VERIFICATION_CHANNEL_ID = process.env.VERIFICATION_CHANNEL_ID;
-
-if (!VERIFICATION_CHANNEL_ID) {
-    console.error('[ERROR] setup.js: VERIFICATION_CHANNEL_ID が環境変数に設定されていません。');
-}
 
 // ==============================================
 // コマンド定義
@@ -44,17 +40,18 @@ export async function execute(interaction) {
     const channel = interaction.options.getChannel('channel');
 
     // 環境変数チェック
-    if (!VERIFICATION_CHANNEL_ID) {
+    const verificationChannelId = getGuildConfig(interaction.guild.id).verificationChannelId;
+    if (!verificationChannelId) {
         return interaction.reply({
-            content: 'エラー: `VERIFICATION_CHANNEL_ID` が環境変数に設定されていません。`.env` を確認してください。',
+            content: '認証チャンネルが未設定です。管理者ダッシュボードの「サーバー設定」から指定してください。',
             ephemeral: true
         });
     }
 
     // 指定されたチャンネルが認証チャンネルと一致するか確認
-    if (channel.id !== VERIFICATION_CHANNEL_ID) {
+    if (channel.id !== verificationChannelId) {
         return interaction.reply({
-            content: `指定したチャンネルが認証チャンネルと異なります。\n認証チャンネル: <#${VERIFICATION_CHANNEL_ID}> を指定してください。`,
+            content: `指定したチャンネルが認証チャンネルと異なります。\n認証チャンネル: <#${verificationChannelId}> を指定してください。`,
             ephemeral: true
         });
     }

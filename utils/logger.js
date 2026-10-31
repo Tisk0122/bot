@@ -1,12 +1,5 @@
 import { EmbedBuilder, AuditLogEvent } from 'discord.js';
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const LOG_CHANNEL_ID = process.env.LOG_CHANNEL_ID;
+import { getGuildConfig } from './guildConfigStore.js';
 
 const ACTION_LABELS = {
     BAN:       { color: 0xdc3545 },
@@ -15,12 +8,14 @@ const ACTION_LABELS = {
     TIMEOUT:   { color: 0x6f42c1 },
     PURGE:     { color: 0x6c757d },
     VERIFY:    { color: 0x007bff },
+    NICKNAME:  { color: 0x5865f2 },
 };
 
 export async function logAction(guild, { action, executor, target, channel, details }) {
-    if (!LOG_CHANNEL_ID) return;
+    const logChannelId = getGuildConfig(guild.id).logChannelId;
+    if (!logChannelId) return;
 
-    const logChannel = await guild.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
+    const logChannel = guild.channels.cache.get(logChannelId) ?? await guild.channels.fetch(logChannelId).catch(() => null);
     if (!logChannel) return;
 
     const config = ACTION_LABELS[action] || { color: 0x5865f2 };
@@ -59,7 +54,7 @@ export async function logAction(guild, { action, executor, target, channel, deta
 // BAN/UNBAN のグローバルイベントを监听するための初期化関数
 export function initAuditLogger(client) {
     client.on('guildBanAdd', async ban => {
-        if (!LOG_CHANNEL_ID) return;
+        if (!getGuildConfig(ban.guild.id).logChannelId) return;
         const entry = await ban.guild.fetchAuditLogs({ type: AuditLogEvent.MemberBanAdd, limit: 1 }).catch(() => null);
         const auditEntry = entry?.entries?.first();
         const executor = auditEntry?.executor || { tag: '不明', id: '0' };
@@ -73,7 +68,7 @@ export function initAuditLogger(client) {
     });
 
     client.on('guildBanRemove', async ban => {
-        if (!LOG_CHANNEL_ID) return;
+        if (!getGuildConfig(ban.guild.id).logChannelId) return;
         const entry = await ban.guild.fetchAuditLogs({ type: AuditLogEvent.MemberBanRemove, limit: 1 }).catch(() => null);
         const auditEntry = entry?.entries?.first();
         const executor = auditEntry?.executor || { tag: '不明', id: '0' };

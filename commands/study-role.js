@@ -11,12 +11,11 @@
 
 import 'dotenv/config';
 import { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } from 'discord.js';
-import { setStudyRecord, deleteStudyRecord, getAllStudyRecords } from '../utils/studyRoleStore.js';
+import { setStudyRecord, getStudyRecord, deleteStudyRecord, getAllStudyRecords } from '../utils/studyRoleStore.js';
+import { getGuildConfig } from '../utils/guildConfigStore.js';
+import { applyStudyVcPermissions } from '../handlers/studyVcHandler.js';
 
-const ADMIN_ROLE_ID = process.env.ADMIN_ROLE_ID;
-
-// 勉強ロールのデフォルト名（変更したい場合は環境変数 STUDY_ROLE_NAME で上書き可能）
-const STUDY_ROLE_NAME = process.env.STUDY_ROLE_NAME || '勉強中';
+function studyRoleName(guildId) { return getGuildConfig(guildId).studyRoleName || '勉強中'; }
 
 export const data = new SlashCommandBuilder()
     .setName('study-role')
@@ -55,8 +54,9 @@ export const data = new SlashCommandBuilder()
 // ==============================================
 // 管理者権限チェック
 // ==============================================
-function isAdmin(member) {
-    if (ADMIN_ROLE_ID && member.roles.cache.has(ADMIN_ROLE_ID)) return true;
+function isAdmin(member, guildId) {
+    const adminRoleId = getGuildConfig(guildId).adminRoleId;
+    if (adminRoleId && member.roles.cache.has(adminRoleId)) return true;
     if (member.permissions.has(PermissionFlagsBits.ManageRoles)) return true;
     return false;
 }
@@ -66,18 +66,19 @@ function isAdmin(member) {
 // ==============================================
 async function getOrCreateStudyRole(guild) {
     // 既存ロールを名前で検索（大文字小文字を区別しない）
+    const roleName = studyRoleName(guild.id);
     const existing = guild.roles.cache.find(
-        r => r.name.toLowerCase() === STUDY_ROLE_NAME.toLowerCase()
+        r => r.name.toLowerCase() === roleName.toLowerCase()
     );
     if (existing) return { role: existing, created: false };
 
     // 存在しなければ作成
     const role = await guild.roles.create({
-        name:   STUDY_ROLE_NAME,
+        name:   roleName,
         color:  0x27ae60,
         reason: '/study-role give による自動作成'
     });
-    console.log(`[StudyRole] ロール自動作成: "${STUDY_ROLE_NAME}" (${role.id})`);
+    console.log(`[StudyRole] ロール自動作成: "${roleName}" (${role.id})`);
     return { role, created: true };
 }
 
@@ -102,6 +103,9 @@ async function handleGive(interaction) {
     let role, created;
     try {
         ({ role, created } = await getOrCreateStudyRole(interaction.guild));
+        if (created && getGuildConfig(interaction.guild.id).studyVoiceChannelId) {
+            await applyStudyVcPermissions(interaction.guild);
+        }
     } catch (err) {
         console.error('[StudyRole] ロール作成失敗:', err);
         return interaction.editReply(`ロールの作成に失敗しました: ${err.message}\nボットに「ロールの管理」権限があるか確認してください。`);
@@ -165,12 +169,12 @@ async function handleRemove(interaction) {
     }
 
     // 勉強ロールをサーバー内で名前検索
-    const role = interaction.guild.roles.cache.find(
-        r => r.name.toLowerCase() === STUDY_ROLE_NAME.toLowerCase()
-    );
+    const record = getStudyRecord(interaction.guild.id, target.id);
+    const role = (record?.roleId ? interaction.guild.roles.cache.get(record.roleId) : null)
+        ?? interaction.guild.roles.cache.find(r => r.name.toLowerCase() === studyRoleName(interaction.guild.id).toLowerCase());
 
     if (!role) {
-        return interaction.editReply(`ロール「${STUDY_ROLE_NAME}」がサーバーに存在しません。`);
+        return interaction.editReply(`ロール「${studyRoleName(interaction.guild.id)}」がサーバーに存在しません。`);
     }
 
     // ロールを持っているか確認
@@ -186,8 +190,15 @@ async function handleRemove(interaction) {
         );
     }
 
-    // ロールを剥奪
+    const config = getGuildConfig(interaction.guild.id);
+    const targetInStudyVc = Boolean(config.studyVoiceChannelId) && target.voice?.channelId === config.studyVoiceChannelId;
+    if (targetInStudyVc && !botMember.permissions.has(PermissionFlagsBits.MoveMembers)) {
+        return interaction.editReply('対象者が勉強VCにいるため、ボットに「メンバーを移動」権限が必要です。権限を追加してから再実行してください。');
+    }
+
+    // ロールを剥奪。勉強VC内にいる場合は同時に退出させる。
     await target.roles.remove(role.id, `勉強ロール剥奪 | 剥奪者: ${interaction.user.tag}`);
+    if (targetInStudyVc) await target.voice.disconnect('おべんきょVC: 勉強ロールを剥奪');
     deleteStudyRecord(interaction.guild.id, target.id);
 
     const embed = new EmbedBuilder()
@@ -221,7 +232,7 @@ async function handleList(interaction) {
     // キャッシュにいないメンバーの記録は削除せず、一覧ではスキップする。
 
     const studyRole = interaction.guild.roles.cache.find(
-        r => r.name.toLowerCase() === STUDY_ROLE_NAME.toLowerCase()
+        r => r.name.toLowerCase() === studyRoleName(interaction.guild.id).toLowerCase()
     );
 
     const lines = [];
@@ -259,7 +270,7 @@ async function handleList(interaction) {
 // ==============================================
 export async function execute(interaction) {
     // 管理者権限チェック
-    if (!isAdmin(interaction.member)) {
+    if (!isAdmin(interaction.member, interaction.guild.id)) {
         return interaction.reply({
             content: 'このコマンドは管理者専用です。',
             ephemeral: true

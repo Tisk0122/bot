@@ -13,6 +13,7 @@ const __dirname  = path.dirname(__filename);
 
 const DATA_DIR      = path.join(__dirname, '..', 'data');
 const PREF_FILE      = path.join(DATA_DIR, 'dm_preferences.json');
+const PROMPT_FILE    = path.join(DATA_DIR, 'dm_prompted.json');
 const RECRUIT_FILE   = path.join(DATA_DIR, 'recruitments.json');
 
 // デフォルトの募集有効期限 (24時間)
@@ -62,6 +63,28 @@ export function setDmPreference(guildId, userId, value) {
     if (!data[guildId]) data[guildId] = {};
     data[guildId][userId] = value;
     saveJson(PREF_FILE, data);
+    clearDmPrompted(guildId, userId);
+}
+
+// 初期案内DMを送信済みのメンバーを記録し、未回答でも同じ案内を何度も送らない。
+export function getAllDmPrompts(guildId) {
+    const data = loadJson(PROMPT_FILE);
+    return data?.[guildId] || {};
+}
+
+export function markDmPrompted(guildId, userId) {
+    const data = loadJson(PROMPT_FILE);
+    if (!data[guildId]) data[guildId] = {};
+    data[guildId][userId] = Date.now();
+    saveJson(PROMPT_FILE, data);
+}
+
+export function clearDmPrompted(guildId, userId) {
+    const data = loadJson(PROMPT_FILE);
+    if (!data[guildId]?.[userId]) return;
+    delete data[guildId][userId];
+    if (Object.keys(data[guildId]).length === 0) delete data[guildId];
+    saveJson(PROMPT_FILE, data);
 }
 
 export function getAllPreferences(guildId) {

@@ -1,344 +1,267 @@
 // ==============================================
 // handlers/studyVcHandler.js
-// おべんきょVCの専用ハンドラー
-//
-// 機能:
-//   1. 入室制限: 勉強ロールを持っていないユーザーをVCから切断する
-//   2. 入室通知: 正規ユーザーにはDMでルールと開始時刻を通知
-//   3. 入退室ログ: ログチャンネルにサイレントメッセージで送信
-//      （通知音を出さないサイレント送信）
-//   4. セッション追跡: 各ユーザーの勉強時間をインメモリで管理
-//
-// ※ロールの付与は /study-role give コマンドで管理します
-//
-// 環境変数:
-//   STUDY_VC_ID          おべんきょVCのチャンネルID
-//                        (デフォルト: 1505121212182036591)
-//   STUDY_LOG_CHANNEL_ID ログを送信するチャンネルID
-//                        (デフォルト: 1472968673558790377)
-//   STUDY_ROLE_NAME      入室を許可するロール名 (デフォルト: 勉強中)
+// おべんきょVC: 勉強ロール必須化、入退室DM/ログ、学習セッション追跡
+// 設定は guild_config.json から動的に参照し、ダッシュボード変更を即時反映する。
 // ==============================================
-
 import 'dotenv/config';
 import { EmbedBuilder, MessageFlags, PermissionFlagsBits, ChannelType } from 'discord.js';
 import { getStudyRecord } from '../utils/studyRoleStore.js';
+import { getGuildConfig } from '../utils/guildConfigStore.js';
 
-const STUDY_VC_ID          = process.env.STUDY_VC_ID          || '1505121212182036591';
-const STUDY_LOG_CHANNEL_ID = process.env.STUDY_LOG_CHANNEL_ID || '1472968673558790377';
-const STUDY_ROLE_NAME      = process.env.STUDY_ROLE_NAME      || '勉強中';
+const sessions = new Map(); // userId -> { joinedAt, guildId }
 
-// インメモリのセッション管理
-// userId -> { joinedAt: number }
-const sessions = new Map();
-
-// ==============================================
-// 時間フォーマット
-// ==============================================
 function formatDuration(ms) {
     const totalSeconds = Math.floor(ms / 1000);
-    const hours   = Math.floor(totalSeconds / 3600);
+    const hours = Math.floor(totalSeconds / 3600);
     const minutes = Math.floor((totalSeconds % 3600) / 60);
     const seconds = totalSeconds % 60;
-
-    if (hours > 0)   return `${hours}時間${minutes}分`;
+    if (hours > 0) return `${hours}時間${minutes}分`;
     if (minutes > 0) return `${minutes}分${seconds}秒`;
     return `${seconds}秒`;
 }
 
-// ==============================================
-// ログチャンネルにサイレントメッセージを送信する
-// SuppressNotifications フラグで通知音を抑制する
-// ==============================================
-async function sendLog(client, embed) {
+async function sendLog(client, guildId, embed) {
+    const logChannelId = getGuildConfig(guildId).studyLogChannelId;
+    if (!logChannelId) return;
     try {
-        const channel = await client.channels.fetch(STUDY_LOG_CHANNEL_ID).catch(() => null);
-        if (!channel) {
-            console.warn(`[Study] ログチャンネルが見つかりません: ${STUDY_LOG_CHANNEL_ID}`);
+        const channel = client.channels.cache.get(logChannelId)
+            ?? await client.channels.fetch(logChannelId).catch(() => null);
+        if (!channel?.isTextBased?.() || typeof channel.send !== 'function') {
+            console.warn(`[Study] ログチャンネルを利用できません: ${logChannelId}`);
             return;
         }
-        await channel.send({
-            embeds: [embed],
-            flags:  MessageFlags.SuppressNotifications
+        await channel.send({ embeds: [embed], flags: MessageFlags.SuppressNotifications });
+    } catch (error) {
+        console.error('[Study] ログ送信失敗:', error.message);
+    }
+}
+
+async function getOrCreateStudyRole(guild, roleName) {
+    let role = guild.roles.cache.find(r => r.name.toLowerCase() === roleName.toLowerCase());
+    if (role) return role;
+    const fetched = await guild.roles.fetch().catch(() => null);
+    role = fetched?.find(r => r.name.toLowerCase() === roleName.toLowerCase()) ?? null;
+    if (role) return role;
+    return guild.roles.create({
+        name: roleName,
+        color: 0x27ae60,
+        reason: 'おべんきょVCの入室制限に必要なロール'
+    });
+}
+
+// 設定保存時と起動時に呼び出す。Discordチャンネル権限でも入室を二重に制限。
+export async function applyStudyVcPermissions(guild, config = getGuildConfig(guild.id)) {
+    if (!config.studyVoiceChannelId) return { enabled: false, reason: '勉強VCが未設定です。' };
+    const channel = guild.channels.cache.get(config.studyVoiceChannelId)
+        ?? await guild.channels.fetch(config.studyVoiceChannelId).catch(() => null);
+    if (!channel || channel.type !== ChannelType.GuildVoice) {
+        throw new Error('勉強VCとして指定したチャンネルが見つからないか、通常のボイスチャンネルではありません。');
+    }
+
+    const botMember = guild.members.me;
+    if (!botMember) throw new Error('Bot自身のメンバー情報を取得できません。');
+    const botPermissions = channel.permissionsFor(botMember);
+    if (!botMember.permissions.has(PermissionFlagsBits.ManageRoles)) {
+        throw new Error('Botに「ロールの管理」権限がありません。');
+    }
+    if (!botPermissions?.has(PermissionFlagsBits.ManageChannels)) {
+        throw new Error('Botに対象VCの「チャンネルの管理」権限がありません。');
+    }
+
+    const roleName = String(config.studyRoleName || '勉強中').trim();
+    if (!roleName) throw new Error('勉強ロール名が空です。');
+    const previousConfig = getGuildConfig(guild.id);
+    const previousRoleName = String(previousConfig.studyRoleName || '勉強中');
+    const previousRole = guild.roles.cache.find(r => r.name.toLowerCase() === previousRoleName.toLowerCase()) ?? null;
+    const role = await getOrCreateStudyRole(guild, roleName);
+    if (botMember.roles.highest.position <= role.position) {
+        throw new Error(`Botのロールが「${role.name}」より下位です。Botのロールを上位に移動してください。`);
+    }
+
+    // 以前の設定がこのチャンネルに残っている場合、旧ロールの接続許可だけを解除する。
+    if (previousRole && previousRole.id !== role.id && previousConfig.studyVoiceChannelId === channel.id) {
+        await channel.permissionOverwrites.edit(previousRole, { Connect: null }, {
+            reason: 'おべんきょVC: 旧勉強ロールの接続許可を解除'
         });
-    } catch (err) {
-        console.error('[Study] ログ送信失敗:', err.message);
     }
+    // VC自体を変更した場合は、旧VCに設定した @everyone / 旧ロールのConnect上書きを解除する。
+    if (previousConfig.studyVoiceChannelId && previousConfig.studyVoiceChannelId !== channel.id) {
+        const oldChannel = guild.channels.cache.get(previousConfig.studyVoiceChannelId);
+        if (oldChannel?.type === ChannelType.GuildVoice) {
+            await oldChannel.permissionOverwrites.edit(guild.roles.everyone, { Connect: null }, {
+                reason: 'おべんきょVC: 管理画面から対象VCを変更'
+            }).catch(error => console.warn(`[Study] 旧VCの権限復元をスキップ: ${error.message}`));
+            if (previousRole) {
+                await oldChannel.permissionOverwrites.edit(previousRole, { Connect: null }, {
+                    reason: 'おべんきょVC: 管理画面から対象VCを変更'
+                }).catch(error => console.warn(`[Study] 旧ロール権限の復元をスキップ: ${error.message}`));
+            }
+        }
+    }
+
+    await channel.permissionOverwrites.edit(guild.roles.everyone, { Connect: false }, {
+        reason: 'おべんきょVC: 勉強ロール保持者以外の接続を拒否'
+    });
+    await channel.permissionOverwrites.edit(role, { Connect: true }, {
+        reason: 'おべんきょVC: 勉強ロール保持者に接続を許可'
+    });
+
+    if (!botPermissions.has(PermissionFlagsBits.MoveMembers)) {
+        console.warn('[Study] Botに「メンバーを移動」権限がありません。権限上書きが唯一の入室制御となります。');
+    }
+    console.log(`[Study] VC接続権限を設定: ${channel.name} | @everyone=拒否 / ${role.name}=許可`);
+    return { enabled: true, channelId: channel.id, channelName: channel.name, roleId: role.id, roleName: role.name };
 }
 
-// ==============================================
-// 入室制限チェック: ロールを持っていない場合は切断してDM通知
-//
-// 【修正点】
-//   以前は guild.roles.cache.find() を使っていたが、
-//   起動直後はロールキャッシュが未構築の場合があり
-//   role が undefined → !role === true → 入室OK と誤判定していた。
-//   guild.roles.fetch() で必ず最新情報をAPIから取得することで修正。
-// ==============================================
-async function checkAndEnforceRole(member) {
-    // voiceStateUpdate が渡す GuildMember と起動時に読み込んだロールキャッシュを使う。
-    // force fetch は Gateway Opcode 8 を発生させるため、入室ごとに実行しない。
-    const role = member.guild.roles.cache.find(
-        r => r.name.toLowerCase() === STUDY_ROLE_NAME.toLowerCase()
-    );
-
-    if (!role) {
-        console.error(`[Study] 必須ロール「${STUDY_ROLE_NAME}」を確認できません。安全のため入室を拒否します。`);
-        await denyStudyEntry(member, `入室に必要なロール「${STUDY_ROLE_NAME}」を確認できません。管理者に連絡してください。`);
-        return true;
-    }
-
-    if (!member.roles.cache.has(role.id)) {
-        await denyStudyEntry(member, `おべんきょVCに入室するには **${STUDY_ROLE_NAME}** ロールが必要です。管理者に付与を依頼してください。`);
-        return true;
-    }
-
-    return false;
-}
-
-// 入室拒否は、切断に失敗しても後続処理（セッション開始・入室ログ）へ進ませない。
-async function denyStudyEntry(member, reason) {
+async function denyStudyEntry(member, reason, config = getGuildConfig(member.guild.id)) {
     try {
-        if (member.voice?.channelId === STUDY_VC_ID) {
+        if (member.voice?.channelId === config.studyVoiceChannelId) {
             await member.voice.disconnect('おべんきょVC: 勉強ロールなし、または資格確認不能');
         }
         console.warn(`[Study] 入室拒否: ${member.user?.tag ?? member.id} (${member.id}) | ${reason}`);
-    } catch (err) {
-        console.error(`[Study] 入室拒否の切断に失敗 (${member.id}): ${err.message}`);
+    } catch (error) {
+        console.error(`[Study] 入室拒否の切断に失敗 (${member.id}): ${error.message}`);
     }
-
     try {
-        await member.send({
-            embeds: [
-                new EmbedBuilder()
-                    .setTitle('おべんきょVC - 入室できません')
-                    .setDescription(reason)
-                    .setColor(0xe74c3c)
-                    .setTimestamp()
-            ]
-        });
-    } catch {
-        // DM拒否は想定内。サーバーログには拒否理由を残す。
-    }
+        await member.send({ embeds: [new EmbedBuilder()
+            .setTitle('おべんきょVC - 入室できません')
+            .setDescription(reason)
+            .setColor(0xe74c3c)
+            .setTimestamp()] });
+    } catch { /* DM拒否は想定内 */ }
 }
 
-// ==============================================
-// VC入室時の処理
-// ==============================================
+export async function checkAndEnforceRole(member, config = getGuildConfig(member.guild.id)) {
+    const roleName = String(config.studyRoleName || '勉強中');
+    const role = member.guild.roles.cache.find(r => r.name.toLowerCase() === roleName.toLowerCase());
+    if (!role) {
+        await denyStudyEntry(member, `入室に必要なロール「${roleName}」を確認できません。管理者に連絡してください。`, config);
+        return true;
+    }
+    if (!member.roles.cache.has(role.id)) {
+        await denyStudyEntry(member, `おべんきょVCに入室するには **${roleName}** ロールが必要です。管理者に付与を依頼してください。`, config);
+        return true;
+    }
+    return false;
+}
+
 async function onStudyJoin(member, client) {
-    const userId = member.id;
-
-    // ロールチェック（持っていなければ切断して終了）
-    const wasKicked = await checkAndEnforceRole(member);
-    if (wasKicked) return;
-
-    // 既存セッションがあればクリア（念のため）
-    sessions.delete(userId);
-
-    // セッション開始
-    sessions.set(userId, { joinedAt: Date.now() });
-
-    // 科目情報を取得
-    const record  = getStudyRecord(member.guild.id, userId);
+    if (await checkAndEnforceRole(member)) return;
+    sessions.set(member.id, { joinedAt: Date.now(), guildId: member.guild.id });
+    const record = getStudyRecord(member.guild.id, member.id);
     const subject = record?.subject ?? null;
 
-    // 入室通知DM
     try {
-        await member.send({
-            embeds: [
-                new EmbedBuilder()
-                    .setTitle('おべんきょVC - 勉強開始')
-                    .setDescription(
-                        'おべんきょVCに参加しました。集中して頑張りましょう。\n\n' +
-                        '**ルール**\n' +
-                        '- 勉強・作業に集中してください\n' +
-                        '- 長時間の雑談は控えましょう\n\n' +
-                        `**開始時刻**: <t:${Math.floor(Date.now() / 1000)}:t>` +
-                        (subject ? `\n**科目**: ${subject}` : '')
-                    )
-                    .setColor(0x27ae60)
-                    .setTimestamp()
-            ]
-        });
-    } catch {
-        // DM送信失敗は無視
-    }
+        await member.send({ embeds: [new EmbedBuilder()
+            .setTitle('おべんきょVC - 勉強開始')
+            .setDescription(
+                'おべんきょVCに参加しました。集中して頑張りましょう。\n\n' +
+                '**ルール**\n- 勉強・作業に集中してください\n- 長時間の雑談は控えましょう\n\n' +
+                `**開始時刻**: <t:${Math.floor(Date.now() / 1000)}:t>` +
+                (subject ? `\n**科目**: ${subject}` : '')
+            )
+            .setColor(0x27ae60).setTimestamp()] });
+    } catch { /* DM失敗は無視 */ }
 
-    // 入室ログ（サイレント）
-    const logEmbed = new EmbedBuilder()
+    const embed = new EmbedBuilder()
         .setTitle('おべんきょVC - 入室')
         .addFields(
-            { name: 'ユーザー', value: `${member} (${member.user.tag})`,        inline: true },
-            { name: '時刻',     value: `<t:${Math.floor(Date.now() / 1000)}:T>`, inline: true }
+            { name: 'ユーザー', value: `${member} (${member.user.tag})`, inline: true },
+            { name: '時刻', value: `<t:${Math.floor(Date.now() / 1000)}:T>`, inline: true }
         )
         .setColor(0x27ae60)
         .setThumbnail(member.user.displayAvatarURL({ size: 64 }))
         .setTimestamp()
-        .setFooter({ text: `ID: ${userId}` });
-
-    if (subject) {
-        logEmbed.addFields({ name: '科目', value: subject, inline: true });
-    }
-
-    await sendLog(client, logEmbed);
-
-    console.log(`[Study] 入室: ${member.user.tag} (${userId})${subject ? ` | 科目: ${subject}` : ''}`);
+        .setFooter({ text: `ID: ${member.id}` });
+    if (subject) embed.addFields({ name: '科目', value: subject, inline: true });
+    await sendLog(client, member.guild.id, embed);
+    console.log(`[Study] 入室: ${member.user.tag} (${member.id})${subject ? ` | 科目: ${subject}` : ''}`);
 }
 
-// ==============================================
-// VC退室時の処理
-// ==============================================
 async function onStudyLeave(member, client) {
-    const userId  = member.id;
-    const session = sessions.get(userId);
-
+    const session = sessions.get(member.id);
     if (!session) return;
-
-    sessions.delete(userId);
-
+    sessions.delete(member.id);
     const duration = Date.now() - session.joinedAt;
-
-    // 科目情報を取得
-    const record  = getStudyRecord(member.guild.id, userId);
+    const record = getStudyRecord(member.guild.id, member.id);
     const subject = record?.subject ?? null;
-
-    // 退室ログ（サイレント）
-    const logEmbed = new EmbedBuilder()
+    const embed = new EmbedBuilder()
         .setTitle('おべんきょVC - 退室')
         .addFields(
-            { name: 'ユーザー',   value: `${member} (${member.user.tag})`,        inline: true },
-            { name: '勉強時間',   value: formatDuration(duration),                  inline: true },
-            { name: '退室時刻',   value: `<t:${Math.floor(Date.now() / 1000)}:T>`,  inline: true }
+            { name: 'ユーザー', value: `${member} (${member.user.tag})`, inline: true },
+            { name: '勉強時間', value: formatDuration(duration), inline: true },
+            { name: '退室時刻', value: `<t:${Math.floor(Date.now() / 1000)}:T>`, inline: true }
         )
         .setColor(0xe74c3c)
         .setThumbnail(member.user.displayAvatarURL({ size: 64 }))
         .setTimestamp()
-        .setFooter({ text: `ID: ${userId}` });
-
-    if (subject) {
-        logEmbed.addFields({ name: '科目', value: subject, inline: true });
-    }
-
-    await sendLog(client, logEmbed);
-
-    console.log(`[Study] 退室: ${member.user.tag} (${userId}) | 勉強時間: ${formatDuration(duration)}`);
+        .setFooter({ text: `ID: ${member.id}` });
+    if (subject) embed.addFields({ name: '科目', value: subject, inline: true });
+    await sendLog(client, member.guild.id, embed);
+    console.log(`[Study] 退室: ${member.user.tag} (${member.id}) | 勉強時間: ${formatDuration(duration)}`);
 }
 
-// ==============================================
-// 現在のセッション状況を取得（外部参照用）
-// ==============================================
-export function getStudyVcStatus() {
+export async function enforceCurrentStudyMembers(guild, config = getGuildConfig(guild.id)) {
+    if (!config.studyVoiceChannelId) return { checked: 0, denied: 0 };
+    const channel = guild.channels.cache.get(config.studyVoiceChannelId);
+    if (!channel?.isVoiceBased?.()) return { checked: 0, denied: 0 };
+    let checked = 0, denied = 0;
+    for (const member of channel.members.values()) {
+        if (member.user.bot) continue;
+        checked++;
+        try {
+            const blocked = await checkAndEnforceRole(member, config);
+            if (blocked) denied++;
+            else if (!sessions.has(member.id)) sessions.set(member.id, { joinedAt: Date.now(), guildId: guild.id });
+        } catch (error) {
+            await denyStudyEntry(member, '入室資格を確認できませんでした。管理者に連絡してください。', config);
+            denied++;
+        }
+    }
+    return { checked, denied };
+}
+
+export function getStudyVcStatus(guildId) {
+    const config = getGuildConfig(guildId);
+    const activeSessions = [...sessions.values()].filter(s => !guildId || s.guildId === guildId).length;
     return {
-        enabled:        true,
-        vcId:           STUDY_VC_ID,
-        logChannelId:   STUDY_LOG_CHANNEL_ID,
-        activeSessions: sessions.size
+        enabled: Boolean(config.studyVoiceChannelId),
+        vcId: config.studyVoiceChannelId || null,
+        logChannelId: config.studyLogChannelId || null,
+        roleName: config.studyRoleName,
+        activeSessions
     };
 }
 
-// ==============================================
-// 初期化 (index.js の ready イベントから呼ぶ)
-//
-// 【修正点】
-//   以前は initStudyVc 内で client.once('ready') をネストして登録していたが、
-//   index.js の ready ハンドラ内から initStudyVc が呼ばれるため
-//   ready はすでに発火済みであり、ネストした once('ready') は
-//   永遠に実行されなかった。
-//
-//   修正後は initStudyVc 自体を async にし、起動時の既存ユーザー確認を
-//   client.once('ready') のネストなしに直接実行する。
-//   index.js 側では await initStudyVc(client) と呼ぶこと。
-// ==============================================
 export async function initStudyVc(client) {
-    console.log(`[Study] おべんきょVC機能を有効化 | VC ID: ${STUDY_VC_ID}`);
-    console.log(`[Study] ログチャンネル: ${STUDY_LOG_CHANNEL_ID} (サイレント送信)`);
-
-    // 起動時に必須ロールを検証。存在しなければ作成し、作成不能なら
-    // 入室判定側が fail-closed で全員を拒否する。
-    for (const [, guild] of client.guilds.cache) {
-        try {
-            const roles = await guild.roles.fetch();
-            let studyRole = roles?.find(r => r.name.toLowerCase() === STUDY_ROLE_NAME.toLowerCase());
-            if (!studyRole) {
-                studyRole = await guild.roles.create({
-                    name: STUDY_ROLE_NAME,
-                    color: 0x27ae60,
-                    reason: 'おべんきょVCの入室制限に必要なロール'
-                });
-                console.log(`[Study] 必須ロールを自動作成: ${studyRole.name} (${studyRole.id})`);
-            } else {
-                console.log(`[Study] 必須ロール確認済み: ${studyRole.name} (${studyRole.id})`);
-            }
-
-            // Discord側でも @everyone の接続を拒否し、勉強ロールだけを許可する。
-            // Bot側のvoiceStateUpdate制御と二重化して、イベント遅延時の隙を減らす。
-            const studyChannel = await guild.channels.fetch(STUDY_VC_ID);
-            if (!studyChannel || studyChannel.type !== ChannelType.GuildVoice) {
-                throw new Error(`STUDY_VC_ID (${STUDY_VC_ID}) が通常のボイスチャンネルではありません`);
-            }
-            const botMember = guild.members.me ?? guild.members.cache.get(client.user.id);
-            if (!botMember) throw new Error('Bot自身のメンバー情報がキャッシュにありません。');
-            const botPermissions = studyChannel.permissionsFor(botMember);
-            if (!botPermissions?.has(PermissionFlagsBits.ManageChannels)) {
-                throw new Error('Botに「チャンネルの管理」権限がありません。VCの接続権限を自動設定できません');
-            }
-            await studyChannel.permissionOverwrites.edit(guild.roles.everyone, {
-                Connect: false
-            }, { reason: 'おべんきょVC: 勉強ロール必須化' });
-            await studyChannel.permissionOverwrites.edit(studyRole, {
-                Connect: true
-            }, { reason: 'おべんきょVC: 勉強ロール保持者に接続を許可' });
-            console.log(`[Study] VC接続権限を設定: @everyone=拒否 / ${STUDY_ROLE_NAME}=許可`);
-
-            if (!botPermissions.has(PermissionFlagsBits.MoveMembers)) {
-                console.error('[Study] Botに「メンバーを移動」権限がありません。権限設定で防げない入室の切断に失敗する可能性があります');
-            }
-        } catch (err) {
-            console.error(`[Study] 必須ロールの初期化失敗 (${guild.id})。入室は fail-closed で拒否します: ${err.message}`);
-        }
-    }
-
-    // voiceStateUpdate リスナーを登録
-    client.on('voiceStateUpdate', async (oldState, newState) => {
-        // ボット自身は無視
-        if (newState.id === client.user.id) return;
-
-        const joinedStudy = newState.channel?.id === STUDY_VC_ID && oldState.channel?.id !== STUDY_VC_ID;
-        const leftStudy   = oldState.channel?.id === STUDY_VC_ID && newState.channel?.id !== STUDY_VC_ID;
-
-        if (joinedStudy) {
-            if (!newState.member) return;
-            await onStudyJoin(newState.member, client).catch(err => {
-                console.error('[Study] 入室処理エラー:', err.message);
-            });
-        } else if (leftStudy) {
-            if (!oldState.member) return;
-            await onStudyLeave(oldState.member, client).catch(err => {
-                console.error('[Study] 退室処理エラー:', err.message);
-            });
-        }
-    });
-
-    // 起動時に既に勉強VCに参加中のユーザーだけ確認する。
-    // guild.members.fetch() でサーバー全員を要求する必要はない。
-    for (const [, guild] of client.guilds.cache) {
-        const studyChannel = guild.channels.cache.get(STUDY_VC_ID);
-        if (!studyChannel || !studyChannel.isVoiceBased?.()) {
-            console.warn(`[Study] 起動時のVCメンバー確認をスキップ: チャンネル未キャッシュ (${guild.id})`);
+    for (const guild of client.guilds.cache.values()) {
+        const config = getGuildConfig(guild.id);
+        if (!config.studyVoiceChannelId) {
+            console.warn(`[Study] 勉強VC未設定のため無効: ${guild.name}`);
             continue;
         }
-
-        for (const member of studyChannel.members.values()) {
-            if (member.id === client.user.id) continue;
-
-            const wasKicked = await checkAndEnforceRole(member).catch(async err => {
-                console.error(`[Study] 起動時の入室資格確認に失敗 (${member.id}): ${err.message}`);
-                await denyStudyEntry(member, '入室資格を確認できませんでした。管理者に連絡してください。');
-                return true;
-            });
-            if (wasKicked) continue;
-
-            sessions.set(member.id, { joinedAt: Date.now() });
-            console.log(`[Study] 起動時セッション引き継ぎ: ${member.user.tag}`);
+        try {
+            const result = await applyStudyVcPermissions(guild, config);
+            console.log(`[Study] おべんきょVC機能を有効化: ${result.channelName} (${result.channelId})`);
+            await enforceCurrentStudyMembers(guild, config);
+        } catch (error) {
+            console.error(`[Study] VC初期化失敗 (${guild.id})。入室判定はfail-closedで実行します: ${error.message}`);
         }
     }
+
+    client.on('voiceStateUpdate', async (oldState, newState) => {
+        if (newState.id === client.user?.id) return;
+        const guildId = newState.guild?.id || oldState.guild?.id;
+        if (!guildId) return;
+        const config = getGuildConfig(guildId);
+        const targetVcId = config.studyVoiceChannelId;
+        if (!targetVcId) return;
+        const joined = newState.channel?.id === targetVcId && oldState.channel?.id !== targetVcId;
+        const left = oldState.channel?.id === targetVcId && newState.channel?.id !== targetVcId;
+        if (joined && newState.member) {
+            await onStudyJoin(newState.member, client).catch(error => console.error('[Study] 入室処理エラー:', error.message));
+        } else if (left && oldState.member) {
+            await onStudyLeave(oldState.member, client).catch(error => console.error('[Study] 退室処理エラー:', error.message));
+        }
+    });
 }

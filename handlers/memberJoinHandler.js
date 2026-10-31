@@ -6,7 +6,7 @@
 // ==============================================
 
 import { sendPreferenceSetupDm } from '../commands/recruit-notify-init.js';
-import { getDmPreference } from '../utils/recruitStore.js';
+import { getDmPreference, getAllDmPrompts, markDmPrompted } from '../utils/recruitStore.js';
 
 export function initMemberJoinNotifier(client) {
     client.on('guildMemberAdd', async member => {
@@ -15,10 +15,12 @@ export function initMemberJoinNotifier(client) {
 
             // 既に設定済み（過去に参加していた等）ならスキップ
             const existing = getDmPreference(member.guild.id, member.id);
-            if (existing) return;
+            const alreadyPrompted = getAllDmPrompts(member.guild.id)[member.id];
+            if (existing || alreadyPrompted) return;
 
             const ok = await sendPreferenceSetupDm(member, member.guild);
             if (ok) {
+                markDmPrompted(member.guild.id, member.id);
                 console.log(`[INFO] 新規メンバーに募集DM通知の設定案内を送信: ${member.user.tag} (${member.id})`);
             } else {
                 console.log(`[INFO] 新規メンバーへの設定案内DM送信に失敗（DMを閉じている可能性）: ${member.user.tag} (${member.id})`);

@@ -17,9 +17,11 @@ const DATA_DIR   = path.join(__dirname, '..', 'data');
 // (パストラバーサル対策 & 誤って別ファイルを壊さないため)
 export const ALLOWED_FILES = [
     'dm_preferences.json',
+    'dm_prompted.json',
     'recruitments.json',
     'ban_data.json',
-    'study_roles.json'
+    'study_roles.json',
+    'guild_config.json'
 ];
 
 function assertAllowed(name) {

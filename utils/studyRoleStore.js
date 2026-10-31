@@ -47,13 +47,14 @@ function save(data) {
 // ==============================================
 // ユーザーの勉強情報を設定する
 // ==============================================
-export function setStudyRecord(guildId, userId, { subject, assignedBy }) {
+export function setStudyRecord(guildId, userId, { subject, assignedBy, roleId = null }) {
     const data = load();
     if (!data[guildId]) data[guildId] = {};
     data[guildId][userId] = {
         subject,
         assignedBy,
-        assignedAt: Date.now()
+        assignedAt: Date.now(),
+        ...(roleId ? { roleId } : {})
     };
     save(data);
 }

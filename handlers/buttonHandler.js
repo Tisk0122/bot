@@ -5,23 +5,23 @@
 // ==============================================
 
 import 'dotenv/config';
-import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, PermissionFlagsBits } from 'discord.js';
 import { logAction } from '../utils/logger.js';
 import { setDmPreference, getRecruitment, updateRecruitment, closeRecruitment } from '../utils/recruitStore.js';
 import { buildRecruitEmbed, buildRecruitButtons, buildRecruitCloseButton } from '../utils/recruitEmbed.js';
+import { getGuildConfig } from '../utils/guildConfigStore.js';
 
-// --- 環境変数の読み込み ---
-const MODERATION_CHANNEL_ID = process.env.MODERATION_CHANNEL_ID;
-const ADMIN_ROLE_ID         = process.env.ADMIN_ROLE_ID;
-const VERIFIED_ROLE_ID      = process.env.VERIFIED_ROLE_ID;
 
-// 起動時に環境変数を検証
-if (!MODERATION_CHANNEL_ID || !ADMIN_ROLE_ID || !VERIFIED_ROLE_ID) {
-    console.error('[ERROR] buttonHandler: 必須の環境変数が不足しています:');
-    if (!MODERATION_CHANNEL_ID) console.error('  - MODERATION_CHANNEL_ID');
-    if (!ADMIN_ROLE_ID)         console.error('  - ADMIN_ROLE_ID');
-    if (!VERIFIED_ROLE_ID)      console.error('  - VERIFIED_ROLE_ID');
+// 管理者ロールが未設定でも、Discord標準のAdministrator権限を持つユーザーは
+// 管理操作を行える。管理者ロールが設定されている場合は、そのロール保持者も許可する。
+function hasAdminAccess(member, guildId) {
+    if (!member) return false;
+    const adminRoleId = getGuildConfig(guildId).adminRoleId;
+    const hasAdministrator = member.permissions?.has?.(PermissionFlagsBits.Administrator) ?? false;
+    const hasConfiguredRole = Boolean(adminRoleId && member.roles?.cache?.has?.(adminRoleId));
+    return hasAdministrator || hasConfiguredRole;
 }
+
 
 // ==============================================
 // 認証ボタン押下処理 (ユーザーが認証を申請する)
@@ -29,8 +29,12 @@ if (!MODERATION_CHANNEL_ID || !ADMIN_ROLE_ID || !VERIFIED_ROLE_ID) {
 async function handleVerifyUser(interaction) {
     const { member } = interaction;
 
-    // 環境変数チェック
-    if (!MODERATION_CHANNEL_ID || !VERIFIED_ROLE_ID) {
+    const config = getGuildConfig(interaction.guild.id);
+    const moderationChannelId = config.moderationChannelId;
+    const verifiedRoleId = config.verifiedRoleId;
+
+    // 認証設定チェック
+    if (!moderationChannelId || !verifiedRoleId) {
         return interaction.reply({
             content: 'エラー: 認証システムの設定が不完全です。管理者に連絡してください。',
             flags: 64
@@ -38,14 +42,15 @@ async function handleVerifyUser(interaction) {
     }
 
     // 既に認証済みかチェック
-    if (member.roles.cache.has(VERIFIED_ROLE_ID)) {
+    if (member.roles.cache.has(verifiedRoleId)) {
         return interaction.reply({ content: 'あなたはすでに認証済みです。', flags: 64 });
     }
 
     // モデレーションチャンネルを取得
-    const moderationChannel = await interaction.client.channels.fetch(MODERATION_CHANNEL_ID).catch(() => null);
+    const moderationChannel = interaction.client.channels.cache.get(moderationChannelId)
+        ?? await interaction.client.channels.fetch(moderationChannelId).catch(() => null);
     if (!moderationChannel) {
-        console.error(`[ERROR] モデレーションチャンネルが見つかりません: ${MODERATION_CHANNEL_ID}`);
+        console.error(`[ERROR] モデレーションチャンネルが見つかりません: ${moderationChannelId}`);
         return interaction.reply({
             content: 'エラーが発生しました。管理者に連絡してください。',
             flags: 64
@@ -103,16 +108,19 @@ async function handleVerifyUser(interaction) {
 async function handleApproval(interaction, userId) {
     const { member, guild } = interaction;
 
-    // 環境変数チェック
-    if (!ADMIN_ROLE_ID || !VERIFIED_ROLE_ID) {
+    const config = getGuildConfig(guild.id);
+    const verifiedRoleId = config.verifiedRoleId;
+
+    // 認証設定チェック
+    if (!verifiedRoleId) {
         return interaction.reply({
             content: 'エラー: 認証システムの設定が不完全です。',
             flags: 64
         });
     }
 
-    // 管理者権限チェック
-    if (!member.roles.cache.has(ADMIN_ROLE_ID)) {
+    // 管理者権限チェック（Administrator または設定済み管理者ロール）
+    if (!hasAdminAccess(member, guild.id)) {
         return interaction.reply({ content: 'この操作を行う権限がありません。', flags: 64 });
     }
 
@@ -138,7 +146,7 @@ async function handleApproval(interaction, userId) {
     }
 
     // 認証ロールの取得
-    const verifiedRole = guild.roles.cache.get(VERIFIED_ROLE_ID);
+    const verifiedRole = guild.roles.cache.get(verifiedRoleId);
     if (!verifiedRole) {
         return interaction.reply({
             content: '認証ロールが見つかりません。VERIFIED_ROLE_ID の設定を確認してください。',
@@ -155,7 +163,7 @@ async function handleApproval(interaction, userId) {
     }
 
     // 既に認証済みかチェック
-    if (targetMember.roles.cache.has(VERIFIED_ROLE_ID)) {
+    if (targetMember.roles.cache.has(verifiedRoleId)) {
         const disabledRow = disableAllButtons(interaction.message);
         const updatedEmbed = EmbedBuilder.from(interaction.message.embeds[0])
             .setColor('#28a745')
@@ -165,7 +173,7 @@ async function handleApproval(interaction, userId) {
 
     try {
         // ロール付与
-        await targetMember.roles.add(VERIFIED_ROLE_ID, `承認者: ${member.user.tag}`);
+        await targetMember.roles.add(verifiedRoleId, `承認者: ${member.user.tag}`);
 
         // Embedを承認済みに更新
         const disabledRow = disableAllButtons(interaction.message);
@@ -221,16 +229,8 @@ async function handleApproval(interaction, userId) {
 async function handleDenial(interaction, userId) {
     const { member, guild } = interaction;
 
-    // 環境変数チェック
-    if (!ADMIN_ROLE_ID) {
-        return interaction.reply({
-            content: 'エラー: 認証システムの設定が不完全です。',
-            flags: 64
-        });
-    }
-
-    // 管理者権限チェック
-    if (!member.roles.cache.has(ADMIN_ROLE_ID)) {
+    // 管理者権限チェック（Administrator または設定済み管理者ロール）
+    if (!hasAdminAccess(member, guild.id)) {
         return interaction.reply({ content: 'この操作を行う権限がありません。', flags: 64 });
     }
 
@@ -405,7 +405,7 @@ async function handleRecruitClose(interaction, recruitId) {
 
     // 主催者または管理者のみ終了可能
     const isHost  = recruit.hostId === interaction.user.id;
-    const isAdmin = ADMIN_ROLE_ID && interaction.member?.roles.cache.has(ADMIN_ROLE_ID);
+    const isAdmin = hasAdminAccess(interaction.member, interaction.guild.id);
 
     if (!isHost && !isAdmin) {
         return interaction.reply({

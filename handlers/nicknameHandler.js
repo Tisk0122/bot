@@ -6,8 +6,7 @@
 // ==============================================
 
 import { EmbedBuilder, PermissionFlagsBits } from 'discord.js';
-
-const ADMIN_ROLE_ID = process.env.ADMIN_ROLE_ID;
+import { getGuildConfig } from '../utils/guildConfigStore.js';
 
 const TRIGGER = 'ニックネーム';
 const RESET_KEYWORDS = new Set(['リセット', 'reset', 'クリア', 'なし']);
@@ -24,7 +23,8 @@ function isResetKeyword(text) {
 function canManageOthersNickname(member) {
     if (!member) return false;
     if (member.permissions.has(PermissionFlagsBits.ManageNicknames)) return true;
-    if (ADMIN_ROLE_ID && member.roles.cache.has(ADMIN_ROLE_ID)) return true;
+    const adminRoleId = getGuildConfig(member.guild.id).adminRoleId;
+    if (adminRoleId && member.roles.cache.has(adminRoleId)) return true;
     return false;
 }
 

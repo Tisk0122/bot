@@ -327,6 +327,33 @@ td.actions-cell{white-space:nowrap}
 @media(prefers-reduced-motion:reduce){.boot-orbit:before,.boot-orbit:after{animation:none}.skeleton{animation:none}}
 
 
+/* ── Management forms ── */
+.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.form-field{display:flex;flex-direction:column;gap:6px;min-width:0}
+.form-field.full{grid-column:1/-1}
+.form-label{font-size:12px;font-weight:700;color:var(--text2)}
+.form-help{font-size:11px;color:var(--text3);line-height:1.55}
+.form-control{width:100%;min-width:0;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:10px 11px;border-radius:8px;font:inherit;font-size:13px;outline:none;transition:border .15s,box-shadow .15s}
+.form-control:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(88,101,242,.12)}
+.form-control::placeholder{color:var(--text3)}
+.form-control.textarea{min-height:112px;resize:vertical;font-family:inherit}
+.action-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;align-items:start}
+.action-card{margin:0;padding:20px}
+.action-card .card-header{margin-bottom:16px}
+.action-card .card-title{font-size:14px}
+.action-card .card-desc{max-width:520px;line-height:1.6}
+.form-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px;align-items:center}
+.section-intro{margin:0 0 18px}
+.section-intro h2{font-size:20px;letter-spacing:-.02em;margin-bottom:5px}
+.section-intro p{font-size:12px;color:var(--text3);line-height:1.65}
+.config-status{display:flex;align-items:center;gap:9px;padding:12px 14px;border:1px solid var(--border);background:var(--surface2);border-radius:9px;font-size:12px;color:var(--text2);margin-bottom:16px}
+.config-status .status-dot{flex-shrink:0}
+.notice{padding:12px 14px;border:1px solid rgba(250,168,26,.28);background:var(--yellow-bg);border-radius:9px;color:#f7cd77;font-size:12px;line-height:1.6;margin-top:14px}
+.inline-select{background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:5px 7px;border-radius:6px;font-size:12px;max-width:135px}
+.action-result{font-size:12px;color:var(--text3);min-height:16px}
+@media(max-width:900px){.action-grid{grid-template-columns:1fr}}
+@media(max-width:600px){.form-grid{grid-template-columns:1fr}.form-field.full{grid-column:auto}.action-card{padding:16px}}
+
 /* ── Confirm row highlight ── */
 tr.deleting td{background:var(--red-bg)!important;transition:background .15s}
 </style>
@@ -377,6 +404,14 @@ tr.deleting td{background:var(--red-bg)!important;transition:background .15s}
       <button class="nav-item active" data-pane="overview">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
         概要
+      </button>
+      <button class="nav-item" data-pane="config">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-1.7 2.94-.08-.02a1.7 1.7 0 0 0-1.78.48l-.06.06h-3.4l-.02-.08a1.7 1.7 0 0 0-1.34-1.24 1.7 1.7 0 0 0-1.34 1.24l-.02.08h-3.4l-.06-.06a1.7 1.7 0 0 0-1.78-.48l-.08.02-1.7-2.94.06-.06A1.7 1.7 0 0 0 3.4 15l-.08-.02v-3.4l.08-.02a1.7 1.7 0 0 0 1.24-1.34 1.7 1.7 0 0 0-1.24-1.34l-.08-.02V5.46l.08-.02a1.7 1.7 0 0 0 1.24-1.34 1.7 1.7 0 0 0-1.24-1.34l-.08-.02 1.7-2.94.08.02a1.7 1.7 0 0 0 1.78-.48l.06-.06h3.4l.02.08a1.7 1.7 0 0 0 1.34 1.24 1.7 1.7 0 0 0 1.34-1.24l.02-.08h3.4l.06.06a1.7 1.7 0 0 0 1.78.48l.08-.02 1.7 2.94-.06.06A1.7 1.7 0 0 0 20.6 5l.08.02v3.4l-.08.02a1.7 1.7 0 0 0-1.24 1.34 1.7 1.7 0 0 0 1.24 1.34l.08.02v3.4z" transform="translate(0 1) scale(.92)"/></svg>
+        サーバー設定
+      </button>
+      <button class="nav-item" data-pane="actions">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18M3 12h18"/><circle cx="12" cy="12" r="9"/></svg>
+        管理操作
       </button>
       <button class="nav-item" data-pane="prefs">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
@@ -464,9 +499,46 @@ tr.deleting td{background:var(--red-bg)!important;transition:background .15s}
         </div>
       </div>
 
+      <!-- ===== サーバー設定 ===== -->
+      <div class="pane" id="pane-config">
+        <div class="section-intro">
+          <h2>サーバー設定</h2>
+          <p>通常コマンドやBotの環境変数で管理していたチャンネル・ロール設定を、ここから一元管理できます。保存後は対応する機能へ即時反映されます。</p>
+        </div>
+        <div class="config-status" id="config-health"><span class="status-dot online"></span><span>サーバー設定を読み込んでいます…</span></div>
+        <div class="card">
+          <div class="card-header"><div><div class="card-title">チャンネル設定</div><div class="card-desc">機能ごとの送信先・対象VCを指定します。</div></div></div>
+          <div class="form-grid">
+            <label class="form-field"><span class="form-label">認証チャンネル</span><select class="form-control" id="cfg-verification"></select><span class="form-help">認証ボードを設置するテキストチャンネル。</span></label>
+            <label class="form-field"><span class="form-label">認証申請チャンネル</span><select class="form-control" id="cfg-moderation"></select><span class="form-help">メンバーが認証を申請した際、管理者向けの承認ボタンを送信。</span></label>
+            <label class="form-field"><span class="form-label">BAN管理チャンネル</span><select class="form-control" id="cfg-ban"></select><span class="form-help">既存のメッセージ式BAN管理コマンドとBANリストの送信先。</span></label>
+            <label class="form-field"><span class="form-label">勉強VC</span><select class="form-control" id="cfg-study-vc"></select><span class="form-help">勉強中ロール以外の接続を拒否するボイスチャンネル。</span></label>
+            <label class="form-field"><span class="form-label">勉強VCログ</span><select class="form-control" id="cfg-study-log"></select><span class="form-help">勉強VCの入退室ログをサイレント送信。</span></label>
+            <label class="form-field"><span class="form-label">AFKチャンネル</span><select class="form-control" id="cfg-afk"></select><span class="form-help">一定時間経過したメンバーの自動移動先。未設定なら無効。</span></label>
+            <label class="form-field"><span class="form-label">管理ログチャンネル</span><select class="form-control" id="cfg-log"></select><span class="form-help">BAN・解除・メッセージ削除などの監査ログ。</span></label>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header"><div><div class="card-title">ロール・動作設定</div><div class="card-desc">入室資格や自動処理の基本ルールを設定します。</div></div></div>
+          <div class="form-grid">
+            <label class="form-field"><span class="form-label">勉強ロール名</span><input class="form-control" id="cfg-study-role-name" type="text" maxlength="80" placeholder="勉強中"><span class="form-help">未作成の場合は保存時に自動作成し、勉強VCの接続権限も設定。</span></label>
+            <label class="form-field"><span class="form-label">管理者ロール</span><select class="form-control" id="cfg-admin-role"></select><span class="form-help">設定したロール、またはDiscord標準の「管理者」権限を持つメンバーに管理操作を許可。空欄でも管理者権限で利用できます。</span></label>
+            <label class="form-field"><span class="form-label">認証済みロール</span><select class="form-control" id="cfg-verified-role"></select><span class="form-help">認証承認時に対象メンバーへ付与するロール。</span></label>
+            <label class="form-field"><span class="form-label">AFK移動までの時間（分）</span><input class="form-control" id="cfg-afk-timeout" type="number" min="1" max="240" step="1" value="30"><span class="form-help">1〜240分。変更すると現在のVC参加者のタイマーも再設定します。</span></label>
+          </div>
+          <div class="notice">勉強VCの保存時はDiscordのチャンネル権限も更新します。@everyone は接続拒否、勉強ロールは接続許可になります。Botには「チャンネルの管理」「ロールの管理」「メンバーを移動」権限が必要です。</div>
+          <div class="form-actions"><button class="btn btn-primary" onclick="saveGuildConfig()">設定を保存</button><button class="btn btn-secondary" onclick="loadConfig()">変更を取り消す</button><button class="btn btn-secondary" onclick="syncStudyVcPermissions()">勉強VCの権限を再適用</button><span class="action-result" id="config-result"></span></div>
+        </div>
+      </div>
+
       <!-- ===== 通知設定 ===== -->
       <div class="pane" id="pane-prefs">
         <div class="stat-grid" id="pref-stats"></div>
+        <div class="card">
+          <div class="card-header"><div><div class="card-title">通知設定の初期案内を送信</div><div class="card-desc">/recruit-notify-init と同等。募集DM通知が未設定のキャッシュ済みメンバーへ、受け取り設定ボタン付きDMを送信します。</div></div></div>
+          <div class="notice">一度に最大50人ずつ送信します。未処理が残る場合は再実行してください。Discord Gatewayの全メンバー取得は使用しないため、現在Botのキャッシュにいないメンバーは対象外です。DMを受信拒否しているメンバーには届きません。</div>
+          <div class="form-actions"><button class="btn btn-primary" id="pref-init-btn" onclick="sendPreferenceInit()">初期案内DMを送信</button><span class="action-result" id="pref-init-result"></span></div>
+        </div>
         <div class="card">
           <div class="card-header">
             <div>
@@ -534,16 +606,112 @@ tr.deleting td{background:var(--red-bg)!important;transition:background .15s}
         </div>
       </div>
 
+      <!-- ===== 管理操作 ===== -->
+      <div class="pane" id="pane-actions">
+        <div class="section-intro">
+          <h2>管理操作センター</h2>
+          <p>スラッシュコマンドで実行していた投稿・募集・認証・削除操作を、この画面から実行できます。実行前に送信先と内容を確認してください。</p>
+        </div>
+        <div class="action-grid">
+          <div class="card action-card">
+            <div class="card-header"><div><div class="card-title">お知らせを送信</div><div class="card-desc">/announce と同等。ロールメンション付きの公式お知らせを投稿します。</div></div></div>
+            <div class="form-grid">
+              <label class="form-field full"><span class="form-label">タイトル</span><input class="form-control" id="announce-title" maxlength="256" placeholder="例：サーバーからのお知らせ"></label>
+              <label class="form-field full"><span class="form-label">本文</span><textarea class="form-control textarea" id="announce-message" maxlength="4096" placeholder="お知らせ内容を入力…"></textarea></label>
+              <label class="form-field"><span class="form-label">送信先</span><select class="form-control text-channel-select" id="announce-channel"></select></label>
+              <label class="form-field"><span class="form-label">メンションロール（任意）</span><select class="form-control role-select" id="announce-role"></select></label>
+              <label class="form-field"><span class="form-label">Embedカラー</span><input class="form-control" id="announce-color" type="text" value="#ffc107" placeholder="#5865f2 / blue / green"></label>
+            </div>
+            <div class="form-actions"><button class="btn btn-primary" onclick="submitAnnouncement()">お知らせを送信</button></div>
+          </div>
+
+          <div class="card action-card">
+            <div class="card-header"><div><div class="card-title">カスタムEmbed</div><div class="card-desc">/embed と同等。画像・サムネイル・フッターを設定して投稿します。</div></div></div>
+            <div class="form-grid">
+              <label class="form-field full"><span class="form-label">タイトル</span><input class="form-control" id="embed-title" maxlength="256" placeholder="Embedタイトル"></label>
+              <label class="form-field full"><span class="form-label">本文</span><textarea class="form-control textarea" id="embed-description" maxlength="4096" placeholder="Embed本文…"></textarea></label>
+              <label class="form-field"><span class="form-label">送信先</span><select class="form-control text-channel-select" id="embed-channel"></select></label>
+              <label class="form-field"><span class="form-label">カラー</span><input class="form-control" id="embed-color" value="#5865f2" placeholder="#5865f2"></label>
+              <label class="form-field full"><span class="form-label">フッター（任意）</span><input class="form-control" id="embed-footer" maxlength="2048" placeholder="フッターテキスト"></label>
+              <label class="form-field full"><span class="form-label">画像URL（任意）</span><input class="form-control" id="embed-image" type="url" placeholder="https://example.com/image.png"></label>
+              <label class="form-field full"><span class="form-label">サムネイルURL（任意）</span><input class="form-control" id="embed-thumbnail" type="url" placeholder="https://example.com/thumb.png"></label>
+            </div>
+            <div class="form-actions"><button class="btn btn-primary" onclick="submitEmbed()">Embedを送信</button></div>
+          </div>
+
+          <div class="card action-card">
+            <div class="card-header"><div><div class="card-title">参加者募集を作成</div><div class="card-desc">/recruit と同等。参加ボタン付き募集を投稿し、通知オンのキャッシュ済みメンバーへDMできます。</div></div></div>
+            <div class="form-grid">
+              <label class="form-field full"><span class="form-label">ゲーム・イベント名</span><input class="form-control" id="recruit-game" maxlength="256" placeholder="例：VALORANT カスタム"></label>
+              <label class="form-field full"><span class="form-label">詳細（任意）</span><textarea class="form-control textarea" id="recruit-description" maxlength="4000" placeholder="ルール・参加条件など"></textarea></label>
+              <label class="form-field"><span class="form-label">日時（任意）</span><input class="form-control" id="recruit-datetime" maxlength="200" placeholder="今すぐ / 21:00〜 / 未定"></label>
+              <label class="form-field"><span class="form-label">定員（任意）</span><input class="form-control" id="recruit-capacity" type="number" min="1" max="999" placeholder="指定なし"></label>
+              <label class="form-field"><span class="form-label">有効期限</span><select class="form-control" id="recruit-expiry"><option value="1">1時間</option><option value="6">6時間</option><option value="12">12時間</option><option value="24" selected>24時間</option><option value="48">48時間</option><option value="72">72時間</option><option value="168">7日間</option></select></label>
+              <label class="form-field"><span class="form-label">投稿先</span><select class="form-control text-channel-select" id="recruit-channel"></select></label>
+            </div>
+            <label class="form-field" style="margin-top:12px"><span class="form-label"><input id="recruit-notify-optin" type="checkbox" checked style="margin-right:7px">通知オンのメンバーへDMを送信</span><span class="form-help">Gatewayの全メンバー取得は行わず、キャッシュ済みメンバーだけを対象にします。</span></label>
+            <div class="form-actions"><button class="btn btn-primary" onclick="submitRecruit()">募集を作成</button></div>
+          </div>
+
+          <div class="card action-card">
+            <div class="card-header"><div><div class="card-title">認証ボードを設置</div><div class="card-desc">/setup-verify と同等。サーバー設定で指定した認証チャンネルにボタンを設置します。</div></div></div>
+            <div class="config-status"><span class="status-dot online"></span><span id="verify-channel-summary">認証チャンネルを確認中…</span></div>
+            <p class="form-help">既に設置済みのボードがあっても、新しいボードを追加で投稿します。重複投稿に注意してください。</p>
+            <div class="form-actions"><button class="btn btn-primary" onclick="setupVerifyBoard()">認証ボードを設置</button></div>
+          </div>
+
+          <div class="card action-card">
+            <div class="card-header"><div><div class="card-title">ニックネームを管理</div><div class="card-desc">既存の「ニックネーム」メッセージ操作をダッシュボードから実行します。</div></div></div>
+            <div class="form-grid">
+              <label class="form-field full"><span class="form-label">対象ユーザーID</span><input class="form-control" id="nickname-user-id" inputmode="numeric" placeholder="123456789012345678"></label>
+              <label class="form-field full"><span class="form-label">新しいニックネーム</span><input class="form-control" id="nickname-value" maxlength="32" placeholder="1〜32文字"></label>
+            </div>
+            <div class="form-help">Botに「ニックネームの管理」権限が必要です。対象メンバーよりBotのロールが上位である必要があります。</div>
+            <div class="form-actions"><button class="btn btn-primary" onclick="submitNickname('set')">ニックネームを変更</button><button class="btn btn-secondary" onclick="submitNickname('reset')">元に戻す</button></div>
+          </div>
+
+          <div class="card action-card">
+            <div class="card-header"><div><div class="card-title">BAN・BAN解除</div><div class="card-desc">サーバーのモデレーション操作。実行にはBotの「メンバーをBAN」権限が必要です。</div></div></div>
+            <div class="form-grid">
+              <label class="form-field"><span class="form-label">操作</span><select class="form-control" id="ban-action"><option value="ban">BANする</option><option value="unban">BANを解除する</option></select></label>
+              <label class="form-field"><span class="form-label">DiscordユーザーID</span><input class="form-control" id="ban-user-id" inputmode="numeric" placeholder="123456789012345678"></label>
+              <label class="form-field full"><span class="form-label">理由</span><input class="form-control" id="ban-reason" maxlength="450" placeholder="理由を入力（監査ログに記録）"></label>
+            </div>
+            <div class="notice">BANは対象ユーザーのサーバー参加を禁止します。IDと理由を必ず確認してから実行してください。</div>
+            <div class="form-actions"><button class="btn btn-danger" onclick="submitBanAction()">操作を確認して実行</button></div>
+          </div>
+
+          <div class="card action-card">
+            <div class="card-header"><div><div class="card-title">メッセージ一括削除</div><div class="card-desc">/purge と同等。指定チャンネルの直近メッセージを最大100件削除します。</div></div></div>
+            <div class="form-grid">
+              <label class="form-field full"><span class="form-label">対象チャンネル</span><select class="form-control text-channel-select" id="purge-channel"></select></label>
+              <label class="form-field"><span class="form-label">削除件数（1〜100）</span><input class="form-control" id="purge-count" type="number" min="1" max="100" value="20"></label>
+              <label class="form-field"><span class="form-label">ユーザーIDで絞り込み（任意）</span><input class="form-control" id="purge-user-id" placeholder="Discord ID"></label>
+            </div>
+            <div class="notice">削除されたメッセージは復元できません。14日以上前のメッセージはDiscordの仕様により一括削除対象外です。</div>
+            <div class="form-actions"><button class="btn btn-danger" onclick="submitPurge()">削除対象を確認して実行</button></div>
+          </div>
+        </div>
+      </div>
+
       <!-- ===== 勉強ロール ===== -->
       <div class="pane" id="pane-study">
+        <div class="card">
+          <div class="card-header"><div><div class="card-title">勉強ロールを管理</div><div class="card-desc">/study-role give・remove と同じ操作を実行できます。ユーザーIDはDiscordのプロフィールからコピーできます。</div></div></div>
+          <div class="form-grid">
+            <label class="form-field"><span class="form-label">ユーザーID</span><input class="form-control" id="study-target-id" inputmode="numeric" placeholder="例：123456789012345678"></label>
+            <label class="form-field"><span class="form-label">勉強する内容</span><input class="form-control" id="study-target-subject" maxlength="100" placeholder="数学 / 英語 / 資格勉強など"></label>
+          </div>
+          <div class="form-actions"><button class="btn btn-primary" onclick="submitStudyRole('give')">勉強ロールを付与</button><button class="btn btn-danger" onclick="submitStudyRole('remove')">勉強ロールを剥奪</button></div>
+        </div>
         <div class="card">
           <div class="card-header">
             <div>
               <div class="card-title">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
-                勉強ロール保持者
+                勉強ロール管理記録
               </div>
-              <div class="card-desc">おべんきょVCへの入室が許可されているメンバー一覧です</div>
+              <div class="card-desc">Botが管理している勉強ロールの付与記録です。手動でロールを変更した場合は実際の状態と異なることがあります。</div>
             </div>
           </div>
           <div class="toolbar">
@@ -560,7 +728,7 @@ tr.deleting td{background:var(--red-bg)!important;transition:background .15s}
           </div>
           <div class="empty" id="study-empty" style="display:none">
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
-            <p>勉強ロール保持者がいません</p>
+            <p>勉強ロールの記録がありません</p>
           </div>
         </div>
       </div>
@@ -628,6 +796,18 @@ tr.deleting td{background:var(--red-bg)!important;transition:background .15s}
 // =============================================
 const API = {
   status:       '/admin/api/status',
+  config:       '/admin/api/config',
+  actionStudy:  '/admin/api/actions/study-role',
+  actionStudyVcSync: '/admin/api/actions/study-vc-sync',
+  actionVerify: '/admin/api/actions/setup-verify',
+  actionAnnounce:'/admin/api/actions/announce',
+  actionEmbed:  '/admin/api/actions/embed',
+  actionRecruit:'/admin/api/actions/recruit',
+  actionPurge:  '/admin/api/actions/purge',
+  actionBan:    '/admin/api/actions/ban',
+  actionNickname: '/admin/api/actions/nickname',
+  actionPrefInit: '/admin/api/actions/recruit-notify-init',
+  setPref:      (uid) => '/admin/api/preferences/' + uid,
   preferences:  '/admin/api/preferences',
   delPref:      (uid)   => '/admin/api/preferences/' + uid,
   recruitments: '/admin/api/recruitments',
@@ -697,7 +877,7 @@ document.getElementById('modal-backdrop').addEventListener('click', e => {
 // ナビゲーション
 // =============================================
 const PANE_TITLES = {
-  overview: '概要', prefs: '通知設定',
+  overview: '概要', config: 'サーバー設定', actions: '管理操作', prefs: '通知設定',
   recruits: '募集一覧', study: '勉強ロール', data: 'データ管理'
 };
 let currentPane = 'overview';
@@ -716,8 +896,12 @@ document.querySelectorAll('.nav-item').forEach(btn => {
 });
 
 function refreshCurrent() {
-  const fns = { overview: loadOverview, prefs: loadPreferences, recruits: loadRecruitments, study: loadStudyRoles, data: loadFiles };
-  if (fns[currentPane]) fns[currentPane]();
+  const fns = { overview: loadOverview, config: loadConfig, actions: loadConfig, prefs: loadPreferences, recruits: loadRecruitments, study: loadStudyRoles, data: loadFiles };
+  const loader = fns[currentPane];
+  if (loader) Promise.resolve().then(loader).catch(err => {
+    // 各ローダーは必要に応じて個別通知する。ここでは未処理Promiseだけを防止する。
+    console.error('[Dashboard] pane load failed:', currentPane, err);
+  });
   loadStatus();
 }
 
@@ -788,44 +972,47 @@ async function loadOverview() {
     apiFetch(API.studyRoles),
   ]);
 
-  const failures = [statusResult, prefResult, recruitResult, studyResult].filter(x => x.status === 'rejected');
-  if (failures.length) {
-    const reason = failures.map(x => x.reason?.message || '不明なAPIエラー').join(' / ');
-    throw new Error('概要データを取得できませんでした: ' + reason);
-  }
-  const s = statusResult.status === 'fulfilled' ? statusResult.value : {};
-  const p = prefResult.status === 'fulfilled' ? prefResult.value : { members: [] };
-  const r = recruitResult.status === 'fulfilled' ? recruitResult.value : { recruitments: [] };
-  const st = studyResult.status === 'fulfilled' ? studyResult.value : { records: [] };
+  const ok = result => result.status === 'fulfilled';
+  const s = ok(statusResult) ? statusResult.value : {};
+  const p = ok(prefResult) ? prefResult.value : null;
+  const r = ok(recruitResult) ? recruitResult.value : null;
+  const st = ok(studyResult) ? studyResult.value : null;
 
-  // 初期取得したデータを各タブでも共有し、同じAPIへの重複アクセスを防ぐ。
-  // ここで代入する prefData / recruitData / studyData は画面全体の共有配列。
-  prefData = p.members || [];
-  recruitData = r.recruitments || [];
-  studyData = st.records || [];
-  updatePreferenceCacheNote(p);
-  document.getElementById('badge-prefs').textContent = prefData.length;
-  document.getElementById('badge-recruits').textContent = recruitData.length;
-  document.getElementById('badge-study').textContent = studyData.length;
+  // APIの一部が失敗しても、取得に成功したカード・一覧はそのまま表示する。
+  // ひとつの失敗で概要全体が空白になることを防ぐ。
+  prefData = p?.members || [];
+  recruitData = r?.recruitments || [];
+  studyData = st?.records || [];
+  if (p) updatePreferenceCacheNote(p);
+  else document.getElementById('pref-cache-note').textContent = '通知データを取得できませんでした。更新して再試行してください。';
+
+  document.getElementById('badge-prefs').textContent = p ? prefData.length : '—';
+  document.getElementById('badge-recruits').textContent = r ? recruitData.length : '—';
+  document.getElementById('badge-study').textContent = st ? studyData.length : '—';
   renderPreferences();
+  if (!p) {
+    document.getElementById('pref-tbody').innerHTML = '<tr><td colspan="4" class="empty" style="text-align:center;padding:20px;color:var(--danger)">通知設定を取得できませんでした</td></tr>';
+    document.getElementById('pref-empty').style.display = 'none';
+  }
   renderRecruitments();
   renderStudyRoles();
 
-  const inCount = (p.members || []).filter(m => m.preference === 'in').length;
-
+  const inCount = prefData.filter(m => m.preference === 'in').length;
   document.getElementById('overview-stats').innerHTML = [
-    ['メンバー数',     s.memberCount ?? '-',     ''],
-    ['通知オン',      inCount,                   'green'],
-    ['アクティブ募集', r.total ?? '-',            'yellow'],
-    ['勉強ロール数',   st.total ?? '-',           'accent'],
+    ['メンバー数',     s.memberCount ?? '—',     ''],
+    ['通知オン',      p ? inCount : '—',          'green'],
+    ['アクティブ募集', r?.total ?? '—',           'yellow'],
+    ['勉強ロール数',   st?.total ?? '—',           'accent'],
   ].map(([label, num, cls]) =>
-    '<div class="stat"><div class="stat-num' + (cls ? ' ' + cls : '') + '">' + num + '</div><div class="stat-label">' + label + '</div></div>'
+    '<div class="stat"><div class="stat-num' + (cls ? ' ' + cls : '') + '">' + esc(num) + '</div><div class="stat-label">' + label + '</div></div>'
   ).join('');
 
   // 最近の募集
-  const recruits = (r.recruitments || []).slice(0, 10);
+  const recruits = (r?.recruitments || []).slice(0, 10);
   const rtbody = document.getElementById('overview-recruit-tbody');
-  if (recruits.length === 0) {
+  if (!r) {
+    rtbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--danger)">募集データの取得に失敗しました</td></tr>';
+  } else if (recruits.length === 0) {
     rtbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--text3)">募集がありません</td></tr>';
   } else {
     rtbody.innerHTML = recruits.map(r =>
@@ -837,9 +1024,11 @@ async function loadOverview() {
   }
 
   // 最近の勉強ロール
-  const studyList = (st.records || []).slice(0, 5);
+  const studyList = (st?.records || []).slice(0, 5);
   const stbody = document.getElementById('overview-study-tbody');
-  if (studyList.length === 0) {
+  if (!st) {
+    stbody.innerHTML = '<tr><td colspan="3" style="text-align:center;padding:20px;color:var(--danger)">勉強ロールデータの取得に失敗しました</td></tr>';
+  } else if (studyList.length === 0) {
     stbody.innerHTML = '<tr><td colspan="3" style="text-align:center;padding:20px;color:var(--text3)">記録がありません</td></tr>';
   } else {
     stbody.innerHTML = studyList.map(r =>
@@ -848,6 +1037,12 @@ async function loadOverview() {
       '<td>' + (r.subject ? '<span class="pill pill-accent">' + esc(r.subject) + '</span>' : '<span style="color:var(--text3)">-</span>') + '</td>' +
       '<td>' + fmtDate(r.assignedAt) + '</td></tr>'
     ).join('');
+  }
+
+  const failures = [statusResult, prefResult, recruitResult, studyResult].filter(result => !ok(result));
+  if (failures.length) {
+    const reason = failures.map(result => result.reason?.message || '不明なAPIエラー').join(' / ');
+    toast('概要の一部データを取得できませんでした。取得できた情報は表示しています: ' + reason, 'error');
   }
 }
 
@@ -909,19 +1104,20 @@ function renderPreferences() {
   document.getElementById('pref-empty').style.display = filtered.length ? 'none' : 'block';
 
   tbody.innerHTML = filtered.map(m => {
-    const pillClass = m.preference === 'in' ? 'pill-green' : m.preference === 'out' ? 'pill-red' : 'pill-gray';
-    const pillLabel = m.preference === 'in' ? '受け取る' : m.preference === 'out' ? '受け取らない' : '未設定';
+    const pillClass = m.preference === 'in' ? 'pill-green' : m.preference === 'out' ? 'pill-red' : m.promptedAt ? 'pill-accent' : 'pill-gray';
+    const pillLabel = m.preference === 'in' ? '受け取る' : m.preference === 'out' ? '受け取らない' : m.promptedAt ? '案内済・未回答' : '未設定';
     return '<tr id="pref-row-' + m.userId + '">' +
       '<td><div class="user-cell"><img class="avatar" src="' + esc(m.avatarUrl) + '" onerror="this.remove()"><span class="user-name">' + esc(m.displayName) + '</span></div></td>' +
       '<td style="font-family:monospace;font-size:12px;color:var(--text3)">' + m.userId + '</td>' +
       '<td><span class="pill ' + pillClass + '">' + pillLabel + '</span></td>' +
-      '<td class="actions-cell">' +
-        (m.preference !== 'unset'
-          ? '<button class="btn btn-danger btn-sm btn-icon" title="設定をリセット" onclick="deletePref(' + "'" + m.userId + "'" + ',this)">' +
-            '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>' +
-            '</button>'
-          : '<span style="color:var(--text3);font-size:12px">-</span>') +
-      '</td></tr>';
+      '<td class="actions-cell"><div style="display:flex;align-items:center;gap:6px">' +
+        '<select class="inline-select" id="pref-select-' + esc(m.userId) + '">' +
+          '<option value="unset" ' + (m.preference === 'unset' ? 'selected' : '') + '>未設定</option>' +
+          '<option value="in" ' + (m.preference === 'in' ? 'selected' : '') + '>受け取る</option>' +
+          '<option value="out" ' + (m.preference === 'out' ? 'selected' : '') + '>受け取らない</option>' +
+        '</select>' +
+        '<button class="btn btn-secondary btn-sm" onclick="updatePreference(' + "'" + m.userId + "'" + ',this)">保存</button>' +
+      '</div></td></tr>';
   }).join('');
 }
 
@@ -939,6 +1135,22 @@ async function deletePref(userId, btn) {
     await loadPreferences();
   } catch (err) {
     toast('削除に失敗しました: ' + err.message, 'error');
+    btn.disabled = false;
+  }
+}
+
+async function updatePreference(userId, btn) {
+  const select = document.getElementById('pref-select-' + userId);
+  if (!select) return;
+  const value = select.value;
+  btn.disabled = true;
+  try {
+    if (value === 'unset') await apiFetch(API.delPref(userId), { method: 'DELETE' });
+    else await apiFetch(API.setPref(userId), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ preference: value }) });
+    toast('通知設定を更新しました', 'success');
+    await loadPreferences();
+  } catch (err) {
+    toast('通知設定の更新に失敗しました: ' + err.message, 'error');
     btn.disabled = false;
   }
 }
@@ -1108,6 +1320,258 @@ async function deleteStudy(userId, btn) {
 document.getElementById('study-search').addEventListener('input', renderStudyRoles);
 
 // =============================================
+// サーバー設定・管理操作
+// =============================================
+let currentConfigData = null;
+
+function setSelectOptions(selectId, items, selectedValue, emptyLabel, filterType) {
+  const el = document.getElementById(selectId);
+  if (!el) return;
+  const filtered = filterType ? items.filter(item => item.type === filterType) : items;
+  let html = emptyLabel ? '<option value="">' + esc(emptyLabel) + '</option>' : '';
+  html += filtered.map(item => '<option value="' + esc(item.id) + '">' + esc(item.name) + '</option>').join('');
+  el.innerHTML = html;
+  el.value = selectedValue || '';
+}
+
+function populateActionChannels(channels) {
+  document.querySelectorAll('.text-channel-select').forEach(el => {
+    const current = el.value;
+    setSelectOptions(el.id, channels, current, 'チャンネルを選択', 'text');
+  });
+}
+
+async function loadConfig() {
+  try {
+    const data = await apiFetch(API.config);
+    currentConfigData = data;
+    const cfg = data.config || {};
+    const channels = data.channels || [];
+    const roles = data.roles || [];
+    setSelectOptions('cfg-verification', channels, cfg.verificationChannelId, '未設定', 'text');
+    setSelectOptions('cfg-moderation', channels, cfg.moderationChannelId, '未設定', 'text');
+    setSelectOptions('cfg-ban', channels, cfg.banChannelId, '未設定', 'text');
+    setSelectOptions('cfg-study-vc', channels, cfg.studyVoiceChannelId, '選択してください', 'voice');
+    setSelectOptions('cfg-study-log', channels, cfg.studyLogChannelId, '未設定', 'text');
+    setSelectOptions('cfg-afk', channels, cfg.afkChannelId, 'AFK機能を無効にする', 'voice');
+    setSelectOptions('cfg-log', channels, cfg.logChannelId, '未設定', 'text');
+    setSelectOptions('cfg-admin-role', roles, cfg.adminRoleId, 'Discord権限で判定');
+    setSelectOptions('cfg-verified-role', roles, cfg.verifiedRoleId, '未設定');
+    setSelectOptions('announce-role', roles, '', 'メンションなし');
+    populateActionChannels(channels);
+    document.getElementById('cfg-study-role-name').value = cfg.studyRoleName || '勉強中';
+    document.getElementById('cfg-afk-timeout').value = cfg.afkTimeoutMinutes || 30;
+    const health = document.getElementById('config-health');
+    const study = data.studyVc || {};
+    const afk = data.afk || {};
+    health.innerHTML = '<span class="status-dot ' + (study.enabled ? 'online' : 'offline') + '"></span><span>' +
+      '勉強VC: ' + (study.enabled ? '有効' : '未設定') + ' · AFK: ' + (afk.enabled ? '有効（' + esc(afk.timeout) + '分）' : '無効') +
+      ' · 設定はサーバーに保存されます</span>';
+    const verifyChannel = channels.find(c => c.id === cfg.verificationChannelId);
+    document.getElementById('verify-channel-summary').textContent = verifyChannel ? '#' + verifyChannel.name : '認証チャンネルが未設定です。サーバー設定で指定してください。';
+    document.getElementById('config-result').textContent = '';
+  } catch (err) {
+    toast('サーバー設定の取得に失敗しました: ' + err.message, 'error');
+    throw err;
+  }
+}
+
+async function saveGuildConfig() {
+  const payload = {
+    verificationChannelId: document.getElementById('cfg-verification').value,
+    moderationChannelId: document.getElementById('cfg-moderation').value,
+    banChannelId: document.getElementById('cfg-ban').value,
+    verifiedRoleId: document.getElementById('cfg-verified-role').value,
+    studyVoiceChannelId: document.getElementById('cfg-study-vc').value,
+    studyLogChannelId: document.getElementById('cfg-study-log').value,
+    studyRoleName: document.getElementById('cfg-study-role-name').value.trim(),
+    afkChannelId: document.getElementById('cfg-afk').value,
+    afkTimeoutMinutes: Number(document.getElementById('cfg-afk-timeout').value),
+    logChannelId: document.getElementById('cfg-log').value,
+    adminRoleId: document.getElementById('cfg-admin-role').value
+  };
+  const button = document.querySelector('#pane-config .btn-primary');
+  if (button) button.disabled = true;
+  try {
+    const data = await apiFetch(API.config, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    toast('サーバー設定を保存しました。対応機能に反映しました。', 'success');
+    document.getElementById('config-result').textContent = '保存済み';
+    await loadConfig();
+    loadStatus();
+  } catch (err) {
+    toast('設定の保存に失敗しました: ' + err.message, 'error');
+    document.getElementById('config-result').textContent = '保存に失敗しました';
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function syncStudyVcPermissions() {
+  const confirmed = await openModal(
+    '勉強VCの入室制御を再適用',
+    '設定済みの勉強ロールだけがVCへ接続できるよう、Discordのチャンネル権限を更新します。現在入室中のメンバーも再確認します。',
+    '権限を再適用', 'btn-primary'
+  );
+  if (!confirmed) return;
+  await runDashboardAction(API.actionStudyVcSync, {}, '勉強VCの権限を更新しました。');
+  await loadConfig();
+}
+
+async function runDashboardAction(url, body, successLabel) {
+  try {
+    const data = await apiFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    toast(data.message || successLabel || '操作が完了しました。', 'success');
+    return data;
+  } catch (err) {
+    toast('操作に失敗しました: ' + err.message, 'error');
+    return null;
+  }
+}
+
+async function sendPreferenceInit() {
+  const confirmed = await openModal(
+    '募集DM通知の初期案内',
+    '未設定のキャッシュ済みメンバー最大50人へ、設定ボタン付きDMを送信します。DMを受け取れない設定のメンバーには届きません。<br><br>送信を開始しますか？',
+    '送信を開始', 'btn-primary'
+  );
+  if (!confirmed) return;
+  const button = document.getElementById('pref-init-btn');
+  if (button) button.disabled = true;
+  document.getElementById('pref-init-result').textContent = '送信中…';
+  try {
+    const data = await apiFetch(API.actionPrefInit, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    document.getElementById('pref-init-result').textContent = '送信 ' + data.sent + ' / 失敗 ' + data.failed + ' / 未処理 ' + data.remaining;
+    toast(data.message, data.failed ? 'info' : 'success');
+    await loadPreferences();
+  } catch (err) {
+    document.getElementById('pref-init-result').textContent = '送信に失敗しました';
+    toast('初期案内DMの送信に失敗しました: ' + err.message, 'error');
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function submitAnnouncement() {
+  const payload = {
+    title: document.getElementById('announce-title').value,
+    message: document.getElementById('announce-message').value,
+    channelId: document.getElementById('announce-channel').value,
+    mentionRoleId: document.getElementById('announce-role').value,
+    color: document.getElementById('announce-color').value
+  };
+  if (!payload.title.trim() || !payload.message.trim() || !payload.channelId) { toast('タイトル・本文・送信先を入力してください。', 'error'); return; }
+  const confirmed = await openModal('お知らせを送信', '<strong>' + esc(payload.title) + '</strong> を選択したチャンネルへ送信します。内容を確認してください。', '送信する', 'btn-primary');
+  if (!confirmed) return;
+  const result = await runDashboardAction(API.actionAnnounce, payload);
+  if (result) { document.getElementById('announce-title').value = ''; document.getElementById('announce-message').value = ''; }
+}
+
+async function submitEmbed() {
+  const payload = {
+    title: document.getElementById('embed-title').value,
+    description: document.getElementById('embed-description').value,
+    channelId: document.getElementById('embed-channel').value,
+    color: document.getElementById('embed-color').value,
+    footer: document.getElementById('embed-footer').value,
+    imageUrl: document.getElementById('embed-image').value,
+    thumbnailUrl: document.getElementById('embed-thumbnail').value
+  };
+  if (!payload.title.trim() || !payload.description.trim() || !payload.channelId) { toast('タイトル・本文・送信先を入力してください。', 'error'); return; }
+  const confirmed = await openModal('カスタムEmbedを送信', '<strong>' + esc(payload.title) + '</strong> を選択したチャンネルへ送信します。', '送信する', 'btn-primary');
+  if (!confirmed) return;
+  const result = await runDashboardAction(API.actionEmbed, payload);
+  if (result) { document.getElementById('embed-title').value = ''; document.getElementById('embed-description').value = ''; }
+}
+
+async function submitRecruit() {
+  const payload = {
+    game: document.getElementById('recruit-game').value,
+    description: document.getElementById('recruit-description').value,
+    datetime: document.getElementById('recruit-datetime').value,
+    capacity: document.getElementById('recruit-capacity').value,
+    expiresHours: Number(document.getElementById('recruit-expiry').value),
+    channelId: document.getElementById('recruit-channel').value,
+    notifyOptIn: document.getElementById('recruit-notify-optin').checked
+  };
+  if (!payload.game.trim() || !payload.channelId) { toast('募集名と投稿先を指定してください。', 'error'); return; }
+  const confirmed = await openModal('参加者募集を作成', '<strong>' + esc(payload.game) + '</strong> の募集を投稿します。' + (payload.notifyOptIn ? '<br>通知オンのキャッシュ済みメンバーへDMも送信します。' : ''), '募集を作成', 'btn-primary');
+  if (!confirmed) return;
+  const result = await runDashboardAction(API.actionRecruit, payload);
+  if (result) {
+    document.getElementById('recruit-game').value = '';
+    document.getElementById('recruit-description').value = '';
+    await loadRecruitments();
+    document.getElementById('badge-recruits').textContent = recruitData.length;
+  }
+}
+
+async function setupVerifyBoard() {
+  const confirmed = await openModal('認証ボードを設置', 'サーバー設定で指定した認証チャンネルに、新しい認証ボードを投稿します。既存のボードは削除されません。', '設置する', 'btn-primary');
+  if (!confirmed) return;
+  await runDashboardAction(API.actionVerify, {});
+}
+
+async function submitNickname(action) {
+  const payload = {
+    userId: document.getElementById('nickname-user-id').value.trim(),
+    nickname: document.getElementById('nickname-value').value.trim(),
+    action
+  };
+  if (!payload.userId) { toast('対象ユーザーIDを入力してください。', 'error'); return; }
+  if (action === 'set' && !payload.nickname) { toast('新しいニックネームを入力してください。', 'error'); return; }
+  const title = action === 'reset' ? 'ニックネームを元に戻す' : 'ニックネームを変更';
+  const detail = action === 'reset' ? '対象ユーザーのニックネームをユーザー名に戻します。' : '新しいニックネーム: <strong>' + esc(payload.nickname) + '</strong>';
+  const confirmed = await openModal(title, '対象ユーザーID: <strong>' + esc(payload.userId) + '</strong><br>' + detail, '実行する', 'btn-primary');
+  if (!confirmed) return;
+  const result = await runDashboardAction(API.actionNickname, payload);
+  if (result) { document.getElementById('nickname-user-id').value = ''; document.getElementById('nickname-value').value = ''; }
+}
+
+async function submitBanAction() {
+  const payload = {
+    action: document.getElementById('ban-action').value,
+    userId: document.getElementById('ban-user-id').value.trim(),
+    reason: document.getElementById('ban-reason').value.trim()
+  };
+  if (!payload.userId) { toast('DiscordユーザーIDを入力してください。', 'error'); return; }
+  const label = payload.action === 'ban' ? 'BAN' : 'BAN解除';
+  const confirmed = await openModal(label + 'を実行', '対象ユーザーID: <strong>' + esc(payload.userId) + '</strong><br>理由: ' + esc(payload.reason || '管理者による操作') + '<br><br>この操作を実行してよろしいですか？', '実行する', 'btn-danger');
+  if (!confirmed) return;
+  const result = await runDashboardAction(API.actionBan, payload);
+  if (result) { document.getElementById('ban-user-id').value = ''; document.getElementById('ban-reason').value = ''; }
+}
+
+async function submitPurge() {
+  const payload = {
+    channelId: document.getElementById('purge-channel').value,
+    count: Number(document.getElementById('purge-count').value),
+    userId: document.getElementById('purge-user-id').value.trim()
+  };
+  if (!payload.channelId) { toast('対象チャンネルを選択してください。', 'error'); return; }
+  if (!Number.isInteger(payload.count) || payload.count < 1 || payload.count > 100) { toast('削除件数は1〜100件です。', 'error'); return; }
+  const confirmed = await openModal('メッセージを一括削除', '<strong>#' + esc(document.getElementById('purge-channel').selectedOptions[0]?.textContent || '') + '</strong> の直近 ' + payload.count + ' 件を確認し、条件に一致するものを削除します。<br><br><strong>この操作は取り消せません。</strong>', '削除を実行', 'btn-danger');
+  if (!confirmed) return;
+  const result = await runDashboardAction(API.actionPurge, payload);
+  if (result) toast(result.message || (result.deleted + '件削除しました。'), 'success');
+}
+
+async function submitStudyRole(action) {
+  const payload = {
+    userId: document.getElementById('study-target-id').value.trim(),
+    subject: document.getElementById('study-target-subject').value.trim(),
+    action
+  };
+  if (!payload.userId) { toast('ユーザーIDを入力してください。', 'error'); return; }
+  if (action === 'give' && !payload.subject) { toast('付与する場合は勉強内容を入力してください。', 'error'); return; }
+  if (action === 'remove') {
+    const confirmed = await openModal('勉強ロールを剥奪', '指定したユーザーから勉強ロールを剥奪し、勉強記録を削除します。', '剥奪する', 'btn-danger');
+    if (!confirmed) return;
+  }
+  const result = await runDashboardAction(API.actionStudy, payload);
+  if (result) { document.getElementById('study-target-id').value = ''; await loadStudyRoles(); }
+}
+
+// =============================================
 // データ管理タブ
 // =============================================
 let currentImportFile = null;
@@ -1259,6 +1723,7 @@ async function bootDashboard() {
     setBootProgress(36, 'API READY', 'API接続を確認しました', '各管理データの取得を開始します...');
     const tasks = [
       ['overview', loadOverview],
+      ['config', loadConfig],
       ['files', loadFiles],
       ['status', loadStatus]
     ];
@@ -1267,15 +1732,19 @@ async function bootDashboard() {
     setBootProgress(58, 'SYNCING DATA', '管理データを同期しています', 'Discord・募集・通知設定・ファイル情報を取得中...');
     const results = await Promise.allSettled(tasks.map(([, fn]) => fn()));
     const failed = results.filter(r => r.status === 'rejected');
-    // 個別ローダーが内部でエラー表示する場合もあるため、未処理の失敗をここで可視化
-    if (failed.length) throw new Error(failed.map(r => r.reason?.message || 'データ取得エラー').join(' / '));
     setBootStep('data', 'done');
     setBootStep('render', 'active');
     setBootProgress(88, 'RENDERING', 'データを反映しています', '画面コンポーネントを最終確認中...');
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     setBootStep('render', 'done');
-    setBootProgress(100, 'ONLINE', '接続完了', 'すべての初期化処理が完了しました');
-    setTimeout(() => overlay.classList.add('is-hidden'), 450);
+    if (failed.length) {
+      const labels = failed.map((result, index) => tasks[results.indexOf(result)]?.[0] || 'data').join(', ');
+      setBootProgress(100, 'PARTIAL READY', '一部データを取得できませんでした', '管理画面は利用できます。該当タブの更新ボタンから再試行してください。');
+      console.warn('[Dashboard] partial boot:', labels, failed.map(r => r.reason?.message));
+    } else {
+      setBootProgress(100, 'ONLINE', '接続完了', 'すべての初期化処理が完了しました');
+    }
+    setTimeout(() => overlay.classList.add('is-hidden'), 650);
   } catch (err) {
     setBootProgress(100, 'CONNECTION ERROR', '読み込みに失敗しました', 'サーバーとの通信を確立できませんでした');
     errorBox.textContent = err.message + '。サーバーログと /admin/api/status を確認してください。';

@@ -5,25 +5,16 @@
 // ==============================================
 
 import 'dotenv/config';
-import { EmbedBuilder } from 'discord.js';
+import { EmbedBuilder, PermissionFlagsBits } from 'discord.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'url';
 import { logAction } from '../utils/logger.js';
+import { getGuildConfig } from '../utils/guildConfigStore.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 
-// --- 環境変数の読み込み ---
-const BAN_CHANNEL_ID = process.env.BAN_CHANNEL_ID;
-const ADMIN_ROLE_ID  = process.env.ADMIN_ROLE_ID;
-
-// 起動時に環境変数を検証
-if (!BAN_CHANNEL_ID || !ADMIN_ROLE_ID) {
-    console.error('[ERROR] banHandler: 必須の環境変数が不足しています:');
-    if (!BAN_CHANNEL_ID) console.error('  - BAN_CHANNEL_ID');
-    if (!ADMIN_ROLE_ID)  console.error('  - ADMIN_ROLE_ID');
-}
 
 // BANデータの保存先 (プロジェクトルートの data/ フォルダ)
 const DATA_FILE = path.join(__dirname, '..', 'data', 'ban_data.json');
@@ -273,19 +264,19 @@ export async function handleBanMessage(message) {
     // ボット自身のメッセージは無視
     if (message.author.bot) return;
 
-    // 環境変数未設定チェック
-    if (!BAN_CHANNEL_ID || !ADMIN_ROLE_ID) {
-        console.error('[ERROR] BAN システムの環境変数が設定されていません。');
-        return;
-    }
+    const { content, member, guild, channel } = message;
+    const config = getGuildConfig(guild?.id);
+    const banChannelId = config.banChannelId;
+    const adminRoleId = config.adminRoleId;
+    if (!banChannelId) return;
 
     // 指定BANチャンネル以外は無視
-    if (message.channel.id !== BAN_CHANNEL_ID) return;
+    if (message.channel.id !== banChannelId) return;
 
-    const { content, member, guild, channel } = message;
-
-    // 管理者権限チェック
-    if (!member.roles.cache.has(ADMIN_ROLE_ID)) {
+    // 管理者ロール、またはDiscord標準のAdministrator権限を確認。
+    const hasAdministrator = member.permissions?.has?.(PermissionFlagsBits.Administrator) ?? false;
+    const hasConfiguredRole = Boolean(adminRoleId && member.roles?.cache?.has?.(adminRoleId));
+    if (!hasAdministrator && !hasConfiguredRole) {
         const reply = await message.reply('この操作を行う権限がありません。').catch(() => null);
         autoDelete(message, reply, 3000);
         return;
@@ -392,14 +383,16 @@ export async function handleBanMessage(message) {
 // ==============================================
 export async function initializeBanList(client) {
     try {
-        if (!BAN_CHANNEL_ID) {
-            console.error('[ERROR] BAN_CHANNEL_ID が設定されていません。BANリストの初期化をスキップします。');
+        const guildId = process.env.GUILD_ID;
+        const config = getGuildConfig(guildId);
+        if (!config.banChannelId) {
+            console.warn('[BAN] BANチャンネル未設定のため、リスト初期化をスキップします。');
             return;
         }
 
-        const channel = await client.channels.fetch(BAN_CHANNEL_ID).catch(() => null);
+        const channel = client.channels.cache.get(config.banChannelId) ?? await client.channels.fetch(config.banChannelId).catch(() => null);
         if (!channel) {
-            console.error(`[ERROR] BANチャンネルが見つかりません: ${BAN_CHANNEL_ID}`);
+            console.error(`[ERROR] BANチャンネルが見つかりません: ${config.banChannelId}`);
             return;
         }
 
@@ -413,4 +406,13 @@ export async function initializeBanList(client) {
     } catch (err) {
         console.error('[ERROR] BANリストの初期化失敗:', err);
     }
+}
+
+// ダッシュボードのBAN/解除操作後に一覧メッセージを更新する。
+export async function refreshBanListMessage(client, guild, allowCreate = true) {
+    const channelId = getGuildConfig(guild.id).banChannelId;
+    if (!channelId) return null;
+    const channel = guild.channels.cache.get(channelId) ?? await client.channels.fetch(channelId).catch(() => null);
+    if (!channel || !channel.isTextBased?.()) return null;
+    return updateBanListMessage(channel, guild, allowCreate);
 }

@@ -75,40 +75,20 @@ async function sendLog(client, embed) {
 //   guild.roles.fetch() で必ず最新情報をAPIから取得することで修正。
 // ==============================================
 async function checkAndEnforceRole(member) {
-    // Fail closed: 権限情報を確認できない場合も入室を許可しない。
-    let roles;
-    try {
-        roles = await member.guild.roles.fetch();
-    } catch (err) {
-        console.error(`[Study] ロール一覧の取得に失敗 (${member.id}): ${err.message}`);
-        await denyStudyEntry(member, '入室資格を確認できませんでした。時間をおいて再度お試しください。');
-        return true;
-    }
+    // voiceStateUpdate が渡す GuildMember と起動時に読み込んだロールキャッシュを使う。
+    // force fetch は Gateway Opcode 8 を発生させるため、入室ごとに実行しない。
+    const role = member.guild.roles.cache.find(
+        r => r.name.toLowerCase() === STUDY_ROLE_NAME.toLowerCase()
+    );
 
-    if (!roles) {
-        console.error('[Study] ロール一覧が取得できません。安全のため入室を拒否します。');
-        await denyStudyEntry(member, '入室資格を確認できませんでした。管理者に連絡してください。');
-        return true;
-    }
-
-    const role = roles.find(r => r.name.toLowerCase() === STUDY_ROLE_NAME.toLowerCase());
     if (!role) {
-        console.error(`[Study] 必須ロール「${STUDY_ROLE_NAME}」が存在しません。安全のため入室を拒否します。`);
-        await denyStudyEntry(member, `入室に必要なロール「${STUDY_ROLE_NAME}」がサーバーにありません。管理者に連絡してください。`);
+        console.error(`[Study] 必須ロール「${STUDY_ROLE_NAME}」を確認できません。安全のため入室を拒否します。`);
+        await denyStudyEntry(member, `入室に必要なロール「${STUDY_ROLE_NAME}」を確認できません。管理者に連絡してください。`);
         return true;
     }
 
-    let freshMember;
-    try {
-        freshMember = await member.guild.members.fetch({ user: member.id, force: true });
-    } catch (err) {
-        console.error(`[Study] メンバー情報の取得に失敗 (${member.id}): ${err.message}`);
-        await denyStudyEntry(member, '入室資格を確認できませんでした。時間をおいて再度お試しください。');
-        return true;
-    }
-
-    if (!freshMember.roles.cache.has(role.id)) {
-        await denyStudyEntry(freshMember, `おべんきょVCに入室するには **${STUDY_ROLE_NAME}** ロールが必要です。管理者に付与を依頼してください。`);
+    if (!member.roles.cache.has(role.id)) {
+        await denyStudyEntry(member, `おべんきょVCに入室するには **${STUDY_ROLE_NAME}** ロールが必要です。管理者に付与を依頼してください。`);
         return true;
     }
 
@@ -295,7 +275,8 @@ export async function initStudyVc(client) {
             if (!studyChannel || studyChannel.type !== ChannelType.GuildVoice) {
                 throw new Error(`STUDY_VC_ID (${STUDY_VC_ID}) が通常のボイスチャンネルではありません`);
             }
-            const botMember = guild.members.me ?? await guild.members.fetch(client.user.id);
+            const botMember = guild.members.me ?? guild.members.cache.get(client.user.id);
+            if (!botMember) throw new Error('Bot自身のメンバー情報がキャッシュにありません。');
             const botPermissions = studyChannel.permissionsFor(botMember);
             if (!botPermissions?.has(PermissionFlagsBits.ManageChannels)) {
                 throw new Error('Botに「チャンネルの管理」権限がありません。VCの接続権限を自動設定できません');
@@ -337,20 +318,18 @@ export async function initStudyVc(client) {
         }
     });
 
-    // 起動時に既にVCに参加中のユーザーのセッションを引き継ぎ
-    // 【修正】client.once('ready') のネストを廃止し、ここで直接実行する
-    //         （index.js の ready ハンドラ内から呼ばれるため ready は発火済み）
+    // 起動時に既に勉強VCに参加中のユーザーだけ確認する。
+    // guild.members.fetch() でサーバー全員を要求する必要はない。
     for (const [, guild] of client.guilds.cache) {
-        try {
-            await guild.members.fetch(); // メンバーキャッシュを確実に構築
-        } catch {
+        const studyChannel = guild.channels.cache.get(STUDY_VC_ID);
+        if (!studyChannel || !studyChannel.isVoiceBased?.()) {
+            console.warn(`[Study] 起動時のVCメンバー確認をスキップ: チャンネル未キャッシュ (${guild.id})`);
             continue;
         }
-        for (const [, member] of guild.members.cache) {
-            if (member.id === client.user.id) continue;
-            if (member.voice.channel?.id !== STUDY_VC_ID) continue;
 
-            // 起動時にもロールチェック（checkAndEnforceRole 内で API 取得）
+        for (const member of studyChannel.members.values()) {
+            if (member.id === client.user.id) continue;
+
             const wasKicked = await checkAndEnforceRole(member).catch(async err => {
                 console.error(`[Study] 起動時の入室資格確認に失敗 (${member.id}): ${err.message}`);
                 await denyStudyEntry(member, '入室資格を確認できませんでした。管理者に連絡してください。');

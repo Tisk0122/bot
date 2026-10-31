@@ -10,7 +10,7 @@
 import { SlashCommandBuilder, ChannelType } from 'discord.js';
 import { randomUUID } from 'node:crypto';
 import { buildRecruitEmbed, buildRecruitButtons, buildRecruitCloseButton } from '../utils/recruitEmbed.js';
-import { createRecruitment, getDmPreference, DEFAULT_RECRUIT_DURATION_MS } from '../utils/recruitStore.js';
+import { createRecruitment, getAllPreferences, DEFAULT_RECRUIT_DURATION_MS } from '../utils/recruitStore.js';
 
 export const data = new SlashCommandBuilder()
     .setName('recruit')
@@ -116,31 +116,31 @@ export async function execute(interaction) {
     // 2) DM通知(受け取る設定のメンバーのみ)を送信
     //    DMには終了ボタンを付けない
     // ------------------------------------------
-    let members;
-    try {
-        members = await interaction.guild.members.fetch();
-    } catch (err) {
-        console.error('[ERROR] メンバー一覧取得失敗:', err);
-        members = new Map();
-    }
+    // 設定ファイルの「受け取る」ユーザーだけを対象にする。
+    // guild.members.fetch() はサーバー全員のGatewayチャンク要求 (Opcode 8) を発生させるため使わない。
+    const preferences = getAllPreferences(interaction.guild.id);
+    const optedInIds = Object.entries(preferences)
+        .filter(([, preference]) => preference === 'in')
+        .map(([userId]) => userId)
+        .filter(userId => userId !== interaction.user.id);
 
     let dmSent = 0;
-    let dmSkipped = 0;
+    let dmSkipped = Object.values(preferences).filter(preference => preference !== 'in').length;
     let dmFailed = 0;
     const dmMessages = {};
 
-    for (const [memberId, member] of members) {
-        if (member.user.bot) continue;
-        if (memberId === interaction.user.id) continue;
-
-        const pref = getDmPreference(interaction.guild.id, memberId);
-        if (pref !== 'in') {
-            dmSkipped++;
-            continue;
-        }
-
+    for (const memberId of optedInIds) {
         try {
-            const dm = await member.send({
+            // users.fetch はRESTのユーザー取得。GuildMemberManagerのOpcode 8は使用しない。
+            const member = interaction.guild.members.cache.get(memberId);
+            const user = member?.user ?? interaction.client.users.cache.get(memberId)
+                ?? await interaction.client.users.fetch(memberId);
+            if (user.bot) {
+                dmSkipped++;
+                continue;
+            }
+
+            const dm = await user.send({
                 embeds: [buildRecruitEmbed(recruit, {
                     footerOverride: `${interaction.guild.name} からの募集通知 | 募集ID: ${recruitId}`
                 })],
@@ -148,8 +148,9 @@ export async function execute(interaction) {
             });
             dmMessages[memberId] = { channelId: dm.channel.id, messageId: dm.id };
             dmSent++;
-        } catch {
+        } catch (err) {
             dmFailed++;
+            console.warn(`[WARN] 募集DM送信失敗 (${memberId}): ${err.message}`);
         }
 
         // DMレート制限対策

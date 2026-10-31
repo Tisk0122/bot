@@ -52,23 +52,50 @@ export function mountDashboard(app, client) {
             const guild = client.guilds.cache.get(guildId);
             if (!guild) return res.status(404).json({ error: 'ギルドが見つかりません。' });
 
-            const members = await guild.members.fetch();
+            // ダッシュボードの表示のたびに guild.members.fetch() を呼ぶと、
+            // Gateway Opcode 8 (Request Guild Members) が発生して制限される。
+            // 表示はキャッシュと保存済み設定だけで構築し、ネットワーク取得を行わない。
+            const cachedMembers = guild.members.cache;
             const prefs = getAllPreferences(guildId);
+            const memberIds = new Set([
+                ...cachedMembers.keys(),
+                ...Object.keys(prefs)
+            ]);
 
-            const list = [...members.values()]
-                .filter(m => !m.user.bot)
-                .map(m => ({
-                    userId: m.id,
-                    tag: m.user.tag,
-                    displayName: m.displayName,
-                    avatarUrl: m.user.displayAvatarURL({ size: 64 }),
-                    preference: prefs[m.id] || 'unset'
-                }))
-                .sort((a, b) => a.tag.localeCompare(b.tag));
+            const list = [];
+            for (const userId of memberIds) {
+                const member = cachedMembers.get(userId) ?? null;
+                const user = member?.user ?? client.users.cache.get(userId) ?? null;
+                if (user?.bot) continue;
 
-            res.json({ total: list.length, members: list });
+                list.push({
+                    userId,
+                    tag: user?.tag ?? `ID: ${userId}`,
+                    displayName: member?.displayName ?? user?.globalName ?? user?.username ?? 'メンバー情報未取得',
+                    avatarUrl: user?.displayAvatarURL?.({ size: 64 }) ?? null,
+                    preference: prefs[userId] || 'unset',
+                    memberCached: Boolean(member)
+                });
+            }
+
+            list.sort((a, b) => a.displayName.localeCompare(b.displayName, 'ja'));
+
+            res.json({
+                total: list.length,
+                members: list,
+                guildMemberCount: guild.memberCount ?? null,
+                cachedMemberCount: cachedMembers.size,
+                cacheOnly: true
+            });
         } catch (err) {
             console.error('[ERROR] /admin/api/preferences:', err);
+            const retryAfter = Number(err?.data?.retry_after ?? err?.retryAfter);
+            if (err?.name === 'GatewayRateLimitError' || Number.isFinite(retryAfter) && retryAfter > 0) {
+                if (Number.isFinite(retryAfter) && retryAfter > 0) {
+                    res.set('Retry-After', String(Math.ceil(retryAfter)));
+                }
+                return res.status(429).json({ error: 'Discordへの要求が一時的に制限されています。少し待ってから再試行してください。' });
+            }
             res.status(500).json({ error: err.message });
         }
     });
@@ -174,12 +201,13 @@ export function mountDashboard(app, client) {
                 let avatarUrl = null;
                 try {
                     if (guild) {
-                        const member = guild.members.cache.get(userId)
-                            || await guild.members.fetch(userId).catch(() => null);
-                        if (member) {
-                            tag = member.user.tag;
-                            displayName = member.displayName;
-                            avatarUrl = member.user.displayAvatarURL({ size: 64 });
+                        // API取得は行わず、キャッシュ済みメンバー/ユーザーのみ参照。
+                        const member = guild.members.cache.get(userId) ?? null;
+                        const user = member?.user ?? client.users.cache.get(userId) ?? null;
+                        if (member || user) {
+                            tag = user?.tag ?? userId;
+                            displayName = member?.displayName ?? user?.globalName ?? user?.username ?? userId;
+                            avatarUrl = user?.displayAvatarURL?.({ size: 64 }) ?? null;
                         }
                     }
                 } catch { /* 退鯖済みユーザーは無視 */ }

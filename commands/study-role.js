@@ -217,8 +217,8 @@ async function handleList(interaction) {
         return interaction.editReply('現在、勉強ロールを付与されているユーザーはいません。');
     }
 
-    // ロールを実際に持っているメンバーのみ表示（ロールが手動削除された場合を除外）
-    await interaction.guild.members.fetch().catch(() => {});
+    // キャッシュ済みメンバーのみ照合する。ここで全メンバーをfetchするとOpcode 8を消費する。
+    // キャッシュにいないメンバーの記録は削除せず、一覧ではスキップする。
 
     const studyRole = interaction.guild.roles.cache.find(
         r => r.name.toLowerCase() === STUDY_ROLE_NAME.toLowerCase()

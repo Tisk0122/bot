@@ -29,8 +29,9 @@ function startAfkTimer(member) {
     const timer = setTimeout(async () => {
         afkTimers.delete(userId);
 
-        // 最新のボイスステートを再取得
-        const freshMember = await member.guild.members.fetch(userId).catch(() => null);
+        // Gatewayで維持されるメンバーキャッシュから最新のボイス状態を読む。
+        // fetch(userId) はOpcode 8を発生させるため、タイマーごとには呼ばない。
+        const freshMember = member.guild.members.cache.get(userId);
         if (!freshMember) return;
 
         const voiceState = freshMember.voice;
@@ -103,17 +104,20 @@ export function initAfkDetector(client) {
         }
     });
 
-    // 起動時に既にVCに入っているユーザーを追跡
-    client.once('ready', async () => {
-        for (const [, guild] of client.guilds.cache) {
-            await guild.members.fetch().catch(() => {});
-            for (const [, member] of guild.members.cache) {
-                if (member.voice.channel && member.id !== client.user.id) {
-                    startAfkTimer(member);
-                }
+    // initAfkDetector は ready 後に呼ばれるため、ここで即時に
+    // キャッシュ済みボイスチャンネル参加者だけを追跡する。
+    // サーバー全メンバーの取得 (Opcode 8) は行わない。
+    for (const [, guild] of client.guilds.cache) {
+        const seen = new Set();
+        for (const channel of guild.channels.cache.values()) {
+            if (!channel.isVoiceBased?.()) continue;
+            for (const member of channel.members.values()) {
+                if (member.id === client.user.id || seen.has(member.id)) continue;
+                seen.add(member.id);
+                startAfkTimer(member);
             }
         }
-    });
+    }
 }
 
 export function getAfkStatus() {

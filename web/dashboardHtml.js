@@ -474,7 +474,7 @@ tr.deleting td{background:var(--red-bg)!important;transition:background .15s}
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
                 募集DM通知の設定状況
               </div>
-              <div class="card-desc">メンバーごとの通知受け取り設定一覧です</div>
+              <div class="card-desc" id="pref-cache-note">メンバーごとの通知受け取り設定一覧です</div>
             </div>
           </div>
           <div class="toolbar">
@@ -781,27 +781,29 @@ async function apiFetch(url, opts = {}) {
 // 概要タブ
 // =============================================
 async function loadOverview() {
-  const [statusData, prefData, recruitData, studyData] = await Promise.allSettled([
+  const [statusResult, prefResult, recruitResult, studyResult] = await Promise.allSettled([
     apiFetch(API.status),
     apiFetch(API.preferences),
     apiFetch(API.recruitments),
     apiFetch(API.studyRoles),
   ]);
 
-  const failures = [statusData, prefData, recruitData, studyData].filter(x => x.status === 'rejected');
+  const failures = [statusResult, prefResult, recruitResult, studyResult].filter(x => x.status === 'rejected');
   if (failures.length) {
     const reason = failures.map(x => x.reason?.message || '不明なAPIエラー').join(' / ');
     throw new Error('概要データを取得できませんでした: ' + reason);
   }
-  const s = statusData.status === 'fulfilled' ? statusData.value : {};
-  const p = prefData.status === 'fulfilled' ? prefData.value : { members: [] };
-  const r = recruitData.status === 'fulfilled' ? recruitData.value : { recruitments: [] };
-  const st = studyData.status === 'fulfilled' ? studyData.value : { records: [] };
+  const s = statusResult.status === 'fulfilled' ? statusResult.value : {};
+  const p = prefResult.status === 'fulfilled' ? prefResult.value : { members: [] };
+  const r = recruitResult.status === 'fulfilled' ? recruitResult.value : { recruitments: [] };
+  const st = studyResult.status === 'fulfilled' ? studyResult.value : { records: [] };
 
-  // 初期取得したデータを各タブでも共有し、同じAPIへの重複アクセスを防ぐ
+  // 初期取得したデータを各タブでも共有し、同じAPIへの重複アクセスを防ぐ。
+  // ここで代入する prefData / recruitData / studyData は画面全体の共有配列。
   prefData = p.members || [];
   recruitData = r.recruitments || [];
   studyData = st.records || [];
+  updatePreferenceCacheNote(p);
   document.getElementById('badge-prefs').textContent = prefData.length;
   document.getElementById('badge-recruits').textContent = recruitData.length;
   document.getElementById('badge-study').textContent = studyData.length;
@@ -854,10 +856,25 @@ async function loadOverview() {
 // =============================================
 let prefData = [];
 
+function updatePreferenceCacheNote(data) {
+  const note = document.getElementById('pref-cache-note');
+  if (!note) return;
+  if (data?.cacheOnly) {
+    const cached = Number(data.cachedMemberCount || 0);
+    const total = data.guildMemberCount;
+    note.textContent = Number.isFinite(Number(total))
+      ? 'メンバーキャッシュ ' + cached.toLocaleString('ja-JP') + ' / サーバー人数 ' + Number(total).toLocaleString('ja-JP') + '。未キャッシュのユーザーは保存済み設定のIDで表示します。'
+      : 'キャッシュ済みメンバーと保存済み設定を表示しています。';
+  } else {
+    note.textContent = 'メンバーごとの通知受け取り設定一覧です';
+  }
+}
+
 async function loadPreferences() {
   try {
     const data = await apiFetch(API.preferences);
     prefData = data.members || [];
+    updatePreferenceCacheNote(data);
     document.getElementById('badge-prefs').textContent = prefData.length;
     renderPreferences();
   } catch (err) {

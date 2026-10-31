@@ -71,19 +71,16 @@ async function handleSetup(interaction) {
             }
         }
 
-        // メンバーキャッシュを最新化
-        await guild.members.fetch();
-
         const guildStatuses = getGuildStatuses(guild.id);
 
         // ① ボードメッセージ（上）
         const boardMsg = await channel.send({
-            embeds: [buildBoardEmbed(guild, guildStatuses)]
+            embeds: [buildBoardEmbed(guildStatuses)]
         });
 
         // ② パネルメッセージ（下）
         const panelMsg = await channel.send({
-            embeds: [buildPanelEmbed()],
+            embeds: [buildPanelEmbed(guildStatuses, null)],
             components: buildPanelComponents(guildStatuses, null)
         });
 

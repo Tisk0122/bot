@@ -2,6 +2,10 @@
 // handlers/statusHandler.js
 // メンバーのステータス（お風呂中・ご飯中など）を管理する
 // ステータスパネル（ボタン）と常時更新ボードをセットで提供する
+//
+// ※ guild.members.fetch() は一切使用しない。
+//    表示名はステータスセット時にインタラクションから取得して保存する。
+//    これにより GatewayRateLimitError (opcode 8) を完全に回避する。
 // ==============================================
 
 import fs from 'node:fs';
@@ -23,15 +27,16 @@ const PANEL_FILE    = path.join(DATA_DIR, 'status_panel.json');
 // ==============================================
 // プリセット定義
 // key は customId のサフィックスとして使用 (status:<key>)
+// color はボードの field カラーインジケーター用
 // ==============================================
 export const STATUS_PRESETS = [
-    { key: 'bath',  emoji: '🛁', label: 'お風呂'       },
-    { key: 'meal',  emoji: '🍚', label: 'ご飯'         },
-    { key: 'sleep', emoji: '😴', label: '就寝'         },
-    { key: 'nap',   emoji: '💤', label: '昼寝'         },
-    { key: 'out',   emoji: '💼', label: '外出'         },
-    { key: 'away',  emoji: '🚶', label: 'ちょっと離席' },
-    { key: 'afk',   emoji: '📵', label: '放置中'       },
+    { key: 'bath',  emoji: '🛁', label: 'お風呂',       color: '#5DADE2', description: '入浴中です'       },
+    { key: 'meal',  emoji: '🍚', label: 'ご飯',         color: '#F39C12', description: '食事中です'       },
+    { key: 'sleep', emoji: '😴', label: '就寝',         color: '#8E44AD', description: '就寝しています'   },
+    { key: 'nap',   emoji: '💤', label: '昼寝',         color: '#9B59B6', description: '昼寝中です'       },
+    { key: 'out',   emoji: '👜', label: '外出',         color: '#27AE60', description: '外出しています'   },
+    { key: 'away',  emoji: '🚶', label: 'ちょっと離席', color: '#E67E22', description: '少し席を外してます' },
+    { key: 'afk',   emoji: '📵', label: '放置中',       color: '#95A5A6', description: 'PCから離れています' },
 ];
 
 // ==============================================
@@ -46,8 +51,7 @@ function loadStatuses() {
     ensureDir();
     try {
         if (!fs.existsSync(STATUSES_FILE)) return {};
-        const raw = fs.readFileSync(STATUSES_FILE, 'utf8');
-        return JSON.parse(raw || '{}');
+        return JSON.parse(fs.readFileSync(STATUSES_FILE, 'utf8') || '{}');
     } catch {
         return {};
     }
@@ -64,8 +68,7 @@ function loadPanelConfig() {
     ensureDir();
     try {
         if (!fs.existsSync(PANEL_FILE)) return {};
-        const raw = fs.readFileSync(PANEL_FILE, 'utf8');
-        return JSON.parse(raw || '{}');
+        return JSON.parse(fs.readFileSync(PANEL_FILE, 'utf8') || '{}');
     } catch {
         return {};
     }
@@ -83,22 +86,32 @@ function savePanelConfig(data) {
 // ==============================================
 
 /**
- * ステータスをセット。同じキーを再度押したらクリア（トグル）。
- * @returns {{ changed: boolean, cleared: boolean, preset: object }}
+ * 経過時間を読みやすい文字列に変換
  */
-export function toggleUserStatus(guildId, userId, statusKey) {
+function formatElapsed(setAt) {
+    const elapsedMin = Math.floor((Date.now() - setAt) / 60_000);
+    if (elapsedMin < 1)   return 'たった今';
+    if (elapsedMin < 60)  return `${elapsedMin}分`;
+    const h = Math.floor(elapsedMin / 60);
+    const m = elapsedMin % 60;
+    return m > 0 ? `${h}時間${m}分` : `${h}時間`;
+}
+
+/**
+ * ステータスをトグル。同じキーを再度押したらクリア。
+ * displayName はインタラクションから渡す（メンバー取得不要にするため）。
+ * @returns {{ cleared: boolean, preset: object }}
+ */
+export function toggleUserStatus(guildId, userId, displayName, statusKey) {
     const all = loadStatuses();
     const guildData = all[guildId] || {};
-    const current = guildData[userId];
     const preset = STATUS_PRESETS.find(p => p.key === statusKey);
     if (!preset) throw new Error(`不明なステータスキー: ${statusKey}`);
 
-    if (current?.key === statusKey) {
-        // 同じボタンを押したのでクリア
+    if (guildData[userId]?.key === statusKey) {
         delete guildData[userId];
     } else {
-        // 新しいステータスをセット（既存は上書き）
-        guildData[userId] = { key: statusKey, setAt: Date.now() };
+        guildData[userId] = { key: statusKey, displayName, setAt: Date.now() };
     }
 
     all[guildId] = guildData;
@@ -132,8 +145,7 @@ export function savePanelMessageIds(guildId, channelId, panelMessageId, boardMes
 }
 
 export function getPanelConfig(guildId) {
-    const cfg = loadPanelConfig();
-    return cfg[guildId] || null;
+    return loadPanelConfig()[guildId] || null;
 }
 
 // ==============================================
@@ -141,105 +153,131 @@ export function getPanelConfig(guildId) {
 // ==============================================
 
 /**
- * ステータスボードの Embed を生成する
+ * ステータスボードの Embed を生成する（大幅改善版）。
+ * - カテゴリ別に整理されたフィールド
+ * - 経過時間を簡潔に表示
+ * - アクティブ人数サマリーをタイトルに表示
+ * - 空の状態も明確に表示
  */
-export function buildBoardEmbed(guild, guildStatuses) {
+export function buildBoardEmbed(guildStatuses) {
     const now = Date.now();
-
-    // ステータスごとにメンバーをグループ化
     const groups = {};
-    for (const [userId, info] of Object.entries(guildStatuses)) {
-        const member = guild.members.cache.get(userId);
-        if (!member) continue; // 退出済みメンバーは無視
+    let totalActive = 0;
 
+    for (const [, info] of Object.entries(guildStatuses)) {
         const preset = STATUS_PRESETS.find(p => p.key === info.key);
-        if (!preset) continue;
+        if (!preset || !info.displayName) continue;
 
         if (!groups[info.key]) groups[info.key] = [];
-        const elapsedMin = Math.floor((now - info.setAt) / 60_000);
-        const elapsed = elapsedMin < 1 ? 'たった今' :
-                        elapsedMin < 60 ? `${elapsedMin}分前` :
-                        `${Math.floor(elapsedMin / 60)}時間${elapsedMin % 60}分前`;
-        groups[info.key].push({ member, elapsed });
+        groups[info.key].push({
+            displayName: info.displayName,
+            elapsed: formatElapsed(info.setAt),
+            setAt: info.setAt,
+        });
+        totalActive++;
     }
 
+    // カテゴリ内を設定時刻の古い順に並べ替え（長く居る人が上）
+    for (const key of Object.keys(groups)) {
+        groups[key].sort((a, b) => a.setAt - b.setAt);
+    }
+
+    const activeKeys = STATUS_PRESETS.map(p => p.key).filter(k => groups[k]);
+
+    // ─── Embed 本体 ───
     const embed = new EmbedBuilder()
-        .setTitle('📋 みんなの今')
         .setColor('#5865F2')
         .setTimestamp()
         .setFooter({ text: '最終更新' });
 
-    const keys = STATUS_PRESETS.map(p => p.key).filter(k => groups[k]);
-
-    if (keys.length === 0) {
-        embed.setDescription('現在ステータスを設定しているメンバーはいません。');
+    if (totalActive === 0) {
+        embed
+            .setTitle('📋  みんなの今')
+            .setDescription(
+                '```\n' +
+                '  現在ステータスを設定している\n' +
+                '  メンバーはいません。\n' +
+                '```'
+            );
         return embed;
     }
 
-    embed.setDescription(null);
-    for (const key of keys) {
-        const preset = STATUS_PRESETS.find(p => p.key === key);
-        const lines = groups[key].map(({ member, elapsed }) =>
-            `・${member.displayName}　(${elapsed})`
-        );
-        embed.addFields({
-            name: `${preset.emoji} ${preset.label}`,
-            value: lines.join('\n'),
-            inline: false
+    // タイトルに人数バッジ
+    embed.setTitle(`📋  みんなの今　　${totalActive}人が外出中`);
+
+    // 区切り線（Discordのembedで水平線代わり）
+    embed.setDescription('─'.repeat(32));
+
+    for (const key of activeKeys) {
+        const preset  = STATUS_PRESETS.find(p => p.key === key);
+        const members = groups[key];
+        const count   = members.length;
+
+        // メンバー1人ずつ「名前  |  経過時間」の形式で整形
+        const lines = members.map(({ displayName, elapsed }) => {
+            // 名前は最大14文字に切り詰め（長い名前でも崩れない）
+            const name = displayName.length > 14
+                ? displayName.slice(0, 13) + '…'
+                : displayName;
+            // スペースで右端に経過時間を寄せる（等幅フォント想定）
+            return `　${name}　（${elapsed}）`;
         });
+
+        const fieldName  = `${preset.emoji}  ${preset.label}　${count > 1 ? `（${count}人）` : ''}`;
+        const fieldValue = lines.join('\n') || '（なし）';
+
+        embed.addFields({ name: fieldName, value: fieldValue, inline: false });
     }
 
     return embed;
 }
 
 /**
- * ステータスパネルの Embed を生成する
+ * ステータスパネルの Embed を生成する（改善版）
  */
-export function buildPanelEmbed() {
+export function buildPanelEmbed(guildStatuses = {}, userId = null) {
+    const currentKey = userId ? (guildStatuses[userId]?.key ?? null) : null;
+    const currentPreset = currentKey ? STATUS_PRESETS.find(p => p.key === currentKey) : null;
+
+    const statusLine = currentPreset
+        ? `現在のステータス：**${currentPreset.emoji} ${currentPreset.label}**\nもう一度押すとクリアされます。`
+        : 'ボタンをタップしてステータスを設定できます。\nもう一度押すとクリアされます。';
+
     return new EmbedBuilder()
-        .setTitle('📍 ステータスパネル')
-        .setDescription(
-            'ボタンをタップしてステータスを設定。\nもう一度押すとクリアされます。'
-        )
-        .setColor('#57F287');
+        .setTitle('📍  ステータスパネル')
+        .setDescription(statusLine)
+        .setColor(currentPreset ? currentPreset.color : '#57F287')
+        .setFooter({ text: 'タップでトグル切り替え' });
 }
 
 /**
- * ステータスパネルのボタン行を生成する（Discord は 1行5個まで、最大5行）
+ * ステータスパネルのボタン行を生成する（7個 → 4+3）
+ * userId が null のときはどのボタンもハイライトしない（setup 時など）
  */
 export function buildPanelComponents(guildStatuses, userId) {
-    const currentKey = guildStatuses[userId]?.key ?? null;
+    const currentKey = userId ? (guildStatuses[userId]?.key ?? null) : null;
+    const chunks = [STATUS_PRESETS.slice(0, 4), STATUS_PRESETS.slice(4)];
 
-    const rows = [];
-    // 2行に分けて配置（7個 → 4+3）
-    const presets = STATUS_PRESETS;
-    const chunks = [presets.slice(0, 4), presets.slice(4)];
-
-    for (const chunk of chunks) {
+    return chunks.map(chunk => {
         const row = new ActionRowBuilder();
         for (const preset of chunk) {
             const isActive = currentKey === preset.key;
             row.addComponents(
                 new ButtonBuilder()
                     .setCustomId(`status:${preset.key}`)
-                    .setLabel(`${preset.emoji} ${preset.label}`)
+                    .setLabel(`${preset.emoji}  ${preset.label}`)
                     .setStyle(isActive ? ButtonStyle.Primary : ButtonStyle.Secondary)
             );
         }
-        rows.push(row);
-    }
-
-    return rows;
+        return row;
+    });
 }
 
 // ==============================================
-// ボードメッセージの更新（全ハンドラーから呼び出す）
+// ボードメッセージの更新
+// guild.members.fetch() を一切呼ばない
 // ==============================================
 
-/**
- * guildId のボードメッセージを最新状態に編集する。
- * パネルメッセージのボタンも押した人のものだけ色を更新する。
- */
 export async function refreshStatusBoard(client, guildId, triggerUserId = null) {
     const cfg = getPanelConfig(guildId);
     if (!cfg) return;
@@ -247,30 +285,25 @@ export async function refreshStatusBoard(client, guildId, triggerUserId = null) 
     const channel = await client.channels.fetch(cfg.channelId).catch(() => null);
     if (!channel) return;
 
-    const guild = channel.guild;
-    await guild.members.fetch(); // メンバーキャッシュを最新化
-
     const guildStatuses = getGuildStatuses(guildId);
 
-    // ボードメッセージを更新
+    // ボードを更新
     try {
         const boardMsg = await channel.messages.fetch(cfg.boardMessageId);
-        await boardMsg.edit({ embeds: [buildBoardEmbed(guild, guildStatuses)] });
+        await boardMsg.edit({ embeds: [buildBoardEmbed(guildStatuses)] });
     } catch (err) {
         console.warn('[StatusHandler] ボードメッセージの更新に失敗:', err.message);
     }
 
-    // パネルのボタン色を更新（押した本人のステータスが反映されるように）
-    if (triggerUserId) {
-        try {
-            const panelMsg = await channel.messages.fetch(cfg.panelMessageId);
-            await panelMsg.edit({
-                embeds: [buildPanelEmbed()],
-                components: buildPanelComponents(guildStatuses, triggerUserId)
-            });
-        } catch (err) {
-            console.warn('[StatusHandler] パネルメッセージの更新に失敗:', err.message);
-        }
+    // パネルのボタン色とembedを更新
+    try {
+        const panelMsg = await channel.messages.fetch(cfg.panelMessageId);
+        await panelMsg.edit({
+            embeds: [buildPanelEmbed(guildStatuses, triggerUserId)],
+            components: buildPanelComponents(guildStatuses, triggerUserId)
+        });
+    } catch (err) {
+        console.warn('[StatusHandler] パネルメッセージの更新に失敗:', err.message);
     }
 }
 
@@ -279,26 +312,28 @@ export async function refreshStatusBoard(client, guildId, triggerUserId = null) 
 // ==============================================
 
 export async function handleStatusButton(interaction) {
-    const { customId, guild, user } = interaction;
+    const { customId, guild, user, member } = interaction;
     const statusKey = customId.split(':')[1];
 
-    // まず deferReply（ephemeral）で処理中を示す
+    // displayName はインタラクションの member から取得（API呼び出し不要）
+    const displayName = member?.displayName ?? user.username;
+
     await interaction.deferReply({ flags: 64 });
 
     try {
-        const { cleared, preset } = toggleUserStatus(guild.id, user.id, statusKey);
+        const { cleared, preset } = toggleUserStatus(guild.id, user.id, displayName, statusKey);
 
         const msg = cleared
-            ? `ステータスをクリアしました。`
-            : `**${preset.emoji} ${preset.label}** をセットしました。`;
+            ? `✅  **${preset.emoji} ${preset.label}** のステータスをクリアしました。`
+            : `✅  **${preset.emoji} ${preset.label}** をセットしました！\nボードに反映されました。`;
 
         await interaction.editReply({ content: msg });
 
-        // ボードとパネルを非同期で更新（ユーザーへの返答後）
+        // ユーザーへの返答後にボード更新
         await refreshStatusBoard(interaction.client, guild.id, user.id);
 
     } catch (err) {
         console.error('[StatusHandler] ステータスボタン処理エラー:', err);
-        await interaction.editReply({ content: 'エラーが発生しました。もう一度お試しください。' });
+        await interaction.editReply({ content: '⚠️  エラーが発生しました。もう一度お試しください。' });
     }
 }

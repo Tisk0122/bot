@@ -294,11 +294,65 @@ td.actions-cell{white-space:nowrap}
 .skeleton{background:linear-gradient(90deg,var(--surface2) 25%,var(--surface3) 50%,var(--surface2) 75%);background-size:200%;animation:skeleton-anim 1.5s infinite;border-radius:4px;height:14px;display:inline-block}
 @keyframes skeleton-anim{0%{background-position:200%}100%{background-position:-200%}}
 
+/* ── Server-grade boot / loading overlay ── */
+.boot-overlay{position:fixed;inset:0;z-index:5000;display:grid;place-items:center;background:rgba(7,9,14,.96);backdrop-filter:blur(18px);transition:opacity .45s ease,visibility .45s ease}
+.boot-overlay.is-hidden{opacity:0;visibility:hidden;pointer-events:none}
+.boot-panel{width:min(460px,calc(100vw - 36px));padding:30px;border:1px solid rgba(88,101,242,.28);border-radius:18px;background:linear-gradient(145deg,#171b28,#0e1119);box-shadow:0 24px 90px rgba(0,0,0,.55),0 0 55px rgba(88,101,242,.08)}
+.boot-brand{display:flex;align-items:center;gap:12px;margin-bottom:26px}
+.boot-mark{width:42px;height:42px;display:grid;place-items:center;border-radius:12px;background:rgba(88,101,242,.16);border:1px solid rgba(88,101,242,.35);color:#aab2ff;font-size:20px}
+.boot-brand strong{display:block;font-size:14px;letter-spacing:.04em}
+.boot-brand small{display:block;color:var(--text3);font-size:11px;margin-top:2px}
+.boot-orbit{height:116px;display:grid;place-items:center;position:relative;margin:0 auto 20px}
+.boot-orbit:before,.boot-orbit:after{content:'';position:absolute;border:1px solid rgba(88,101,242,.22);border-radius:50%;animation:boot-spin 5s linear infinite}
+.boot-orbit:before{width:92px;height:92px;border-top-color:#8791ff;border-right-color:#8791ff}
+.boot-orbit:after{width:66px;height:66px;border-bottom-color:#3ba55c;animation-direction:reverse;animation-duration:3.2s}
+.boot-core{width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,#6875ff,#343eaa);box-shadow:0 0 32px rgba(88,101,242,.45);display:grid;place-items:center;color:white;font-weight:800}
+@keyframes boot-spin{to{transform:rotate(360deg)}}
+.boot-title{text-align:center;font-size:16px;font-weight:700}
+.boot-subtitle{text-align:center;color:var(--text3);font-size:12px;margin-top:5px}
+.boot-progress{height:5px;background:#252a3a;border-radius:99px;overflow:hidden;margin:23px 0 14px}
+.boot-progress>span{display:block;height:100%;width:12%;border-radius:99px;background:linear-gradient(90deg,#5865f2,#8b98ff,#3ba55c);box-shadow:0 0 14px rgba(88,101,242,.5);transition:width .35s ease}
+.boot-meta{display:flex;justify-content:space-between;gap:12px;color:var(--text3);font-size:11px;font-family:ui-monospace,monospace}
+.boot-steps{display:grid;gap:9px;margin-top:22px}
+.boot-step{display:flex;align-items:center;gap:9px;color:var(--text3);font-size:12px}
+.boot-step .step-icon{width:17px;height:17px;border:1px solid var(--border2);border-radius:50%;display:grid;place-items:center;font-size:9px}
+.boot-step.active{color:var(--text)}
+.boot-step.done{color:#6be08a}
+.boot-step.done .step-icon{border-color:var(--green);background:var(--green-bg)}
+.boot-error{display:none;margin-top:18px;padding:12px;border:1px solid rgba(237,66,69,.35);border-radius:9px;background:var(--red-bg);color:#ff9ca4;font-size:12px;line-height:1.6}
+.boot-error.show{display:block}
+.boot-retry{display:none;width:100%;margin-top:12px;padding:10px;border:0;border-radius:8px;background:var(--accent);color:white;font-weight:700;cursor:pointer}
+.boot-retry.show{display:block}
+@media(prefers-reduced-motion:reduce){.boot-orbit:before,.boot-orbit:after{animation:none}.skeleton{animation:none}}
+
+
 /* ── Confirm row highlight ── */
 tr.deleting td{background:var(--red-bg)!important;transition:background .15s}
 </style>
 </head>
 <body>
+
+<div class="boot-overlay" id="boot-overlay" role="status" aria-live="polite">
+  <div class="boot-panel">
+    <div class="boot-brand">
+      <div class="boot-mark">⌘</div>
+      <div><strong>HINANSABA CONTROL</strong><small>SERVER MANAGEMENT SYSTEM</small></div>
+    </div>
+    <div class="boot-orbit"><div class="boot-core">H</div></div>
+    <div class="boot-title" id="boot-title">サーバーへ接続しています</div>
+    <div class="boot-subtitle" id="boot-subtitle">管理データベースとAPIの応答を確認中...</div>
+    <div class="boot-progress"><span id="boot-progress-bar"></span></div>
+    <div class="boot-meta"><span id="boot-stage">INITIALIZING</span><span id="boot-percent">12%</span></div>
+    <div class="boot-steps">
+      <div class="boot-step active" id="boot-step-connection"><span class="step-icon">1</span>サーバー接続を確認</div>
+      <div class="boot-step" id="boot-step-api"><span class="step-icon">2</span>APIエンドポイントを初期化</div>
+      <div class="boot-step" id="boot-step-data"><span class="step-icon">3</span>管理データを取得</div>
+      <div class="boot-step" id="boot-step-render"><span class="step-icon">4</span>ダッシュボードを構築</div>
+    </div>
+    <div class="boot-error" id="boot-error"></div>
+    <button class="boot-retry" id="boot-retry" onclick="bootDashboard()">再接続して読み込む</button>
+  </div>
+</div>
 
 <div class="layout">
 
@@ -687,13 +741,39 @@ async function loadStatus() {
 // 汎用 fetch
 // =============================================
 async function apiFetch(url, opts = {}) {
-  const res = await fetch(url, opts);
-  if (!res.ok) {
-    let msg = 'HTTPエラー ' + res.status;
-    try { const d = await res.json(); msg = d.error || msg; } catch {}
-    throw new Error(msg);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 25000);
+  try {
+    const res = await fetch(url, {
+      cache: 'no-store',
+      credentials: 'same-origin',
+      ...opts,
+      signal: opts.signal || controller.signal,
+      headers: {
+        'Accept': 'application/json',
+        ...(opts.headers || {})
+      }
+    });
+    const contentType = res.headers.get('content-type') || '';
+    if (!res.ok) {
+      let msg = 'HTTP ' + res.status + ' ' + res.statusText;
+      if (contentType.includes('application/json')) {
+        try { const d = await res.json(); msg = d.error || msg; } catch {}
+      }
+      throw new Error(msg);
+    }
+    if (!contentType.includes('application/json')) {
+      const body = await res.text();
+      throw new Error('JSON以外の応答を受信しました。認証切れまたはサーバー側エラーの可能性があります: ' + body.slice(0, 120));
+    }
+    return await res.json();
+  } catch (err) {
+    if (err.name === 'AbortError') throw new Error('サーバー応答がタイムアウトしました（25秒）');
+    if (err instanceof TypeError) throw new Error('サーバーに接続できません。ネットワークまたはサーバー状態を確認してください。');
+    throw err;
+  } finally {
+    clearTimeout(timeout);
   }
-  return res.json();
 }
 
 // =============================================
@@ -707,10 +787,26 @@ async function loadOverview() {
     apiFetch(API.studyRoles),
   ]);
 
-  const s = statusData.value || {};
-  const p = prefData.value || { members: [] };
-  const r = recruitData.value || { recruitments: [] };
-  const st = studyData.value || { records: [] };
+  const failures = [statusData, prefData, recruitData, studyData].filter(x => x.status === 'rejected');
+  if (failures.length) {
+    const reason = failures.map(x => x.reason?.message || '不明なAPIエラー').join(' / ');
+    throw new Error('概要データを取得できませんでした: ' + reason);
+  }
+  const s = statusData.status === 'fulfilled' ? statusData.value : {};
+  const p = prefData.status === 'fulfilled' ? prefData.value : { members: [] };
+  const r = recruitData.status === 'fulfilled' ? recruitData.value : { recruitments: [] };
+  const st = studyData.status === 'fulfilled' ? studyData.value : { records: [] };
+
+  // 初期取得したデータを各タブでも共有し、同じAPIへの重複アクセスを防ぐ
+  prefData = p.members || [];
+  recruitData = r.recruitments || [];
+  studyData = st.records || [];
+  document.getElementById('badge-prefs').textContent = prefData.length;
+  document.getElementById('badge-recruits').textContent = recruitData.length;
+  document.getElementById('badge-study').textContent = studyData.length;
+  renderPreferences();
+  renderRecruitments();
+  renderStudyRoles();
 
   const inCount = (p.members || []).filter(m => m.preference === 'in').length;
 
@@ -765,6 +861,7 @@ async function loadPreferences() {
     renderPreferences();
   } catch (err) {
     toast('通知設定の取得に失敗しました: ' + err.message, 'error');
+    throw err;
   }
 }
 
@@ -774,7 +871,7 @@ function renderPreferences() {
 
   const filtered = prefData.filter(m => {
     if (filter !== 'all' && m.preference !== filter) return false;
-    if (search && !m.tag.toLowerCase().includes(search) && !m.displayName.toLowerCase().includes(search)) return false;
+    if (search && !(m.tag || '').toLowerCase().includes(search) && !(m.displayName || '').toLowerCase().includes(search)) return false;
     return true;
   });
 
@@ -844,6 +941,7 @@ async function loadRecruitments() {
     renderRecruitments();
   } catch (err) {
     toast('募集一覧の取得に失敗しました: ' + err.message, 'error');
+    throw err;
   }
 }
 
@@ -942,13 +1040,14 @@ async function loadStudyRoles() {
     renderStudyRoles();
   } catch (err) {
     toast('勉強ロール一覧の取得に失敗しました: ' + err.message, 'error');
+    throw err;
   }
 }
 
 function renderStudyRoles() {
   const search = document.getElementById('study-search').value.trim().toLowerCase();
   const filtered = studyData.filter(r =>
-    !search || r.tag.toLowerCase().includes(search) || r.displayName.toLowerCase().includes(search)
+    !search || (r.tag || '').toLowerCase().includes(search) || (r.displayName || '').toLowerCase().includes(search)
   );
 
   const tbody = document.getElementById('study-tbody');
@@ -1029,6 +1128,7 @@ async function loadFiles() {
     }).join('');
   } catch (err) {
     toast('ファイル一覧の取得に失敗しました: ' + err.message, 'error');
+    throw err;
   }
 }
 
@@ -1106,12 +1206,69 @@ async function submitImport() {
 // =============================================
 // 初期化
 // =============================================
-loadStatus();
-loadOverview();
-loadPreferences();
-loadRecruitments();
-loadStudyRoles();
-loadFiles();
+// =============================================
+// サーバー接続・初期データ同期
+// =============================================
+const BOOT_STEPS = ['connection', 'api', 'data', 'render'];
+function setBootStep(step, state) {
+  const el = document.getElementById('boot-step-' + step);
+  if (!el) return;
+  el.classList.remove('active', 'done');
+  if (state) el.classList.add(state);
+  const icon = el.querySelector('.step-icon');
+  if (icon) icon.textContent = state === 'done' ? '✓' : String(BOOT_STEPS.indexOf(step) + 1);
+}
+function setBootProgress(percent, stage, title, subtitle) {
+  document.getElementById('boot-progress-bar').style.width = percent + '%';
+  document.getElementById('boot-percent').textContent = percent + '%';
+  document.getElementById('boot-stage').textContent = stage;
+  document.getElementById('boot-title').textContent = title;
+  document.getElementById('boot-subtitle').textContent = subtitle;
+}
+async function bootDashboard() {
+  const overlay = document.getElementById('boot-overlay');
+  const errorBox = document.getElementById('boot-error');
+  const retry = document.getElementById('boot-retry');
+  overlay.classList.remove('is-hidden');
+  errorBox.classList.remove('show');
+  retry.classList.remove('show');
+  BOOT_STEPS.forEach(step => setBootStep(step, ''));
+  setBootProgress(12, 'CONNECTING', 'サーバーへ接続しています', '管理APIの応答を確認中...');
+  try {
+    await apiFetch(API.status);
+    setBootStep('connection', 'done');
+    setBootStep('api', 'active');
+    setBootProgress(36, 'API READY', 'API接続を確認しました', '各管理データの取得を開始します...');
+    const tasks = [
+      ['overview', loadOverview],
+      ['files', loadFiles],
+      ['status', loadStatus]
+    ];
+    setBootStep('api', 'done');
+    setBootStep('data', 'active');
+    setBootProgress(58, 'SYNCING DATA', '管理データを同期しています', 'Discord・募集・通知設定・ファイル情報を取得中...');
+    const results = await Promise.allSettled(tasks.map(([, fn]) => fn()));
+    const failed = results.filter(r => r.status === 'rejected');
+    // 個別ローダーが内部でエラー表示する場合もあるため、未処理の失敗をここで可視化
+    if (failed.length) throw new Error(failed.map(r => r.reason?.message || 'データ取得エラー').join(' / '));
+    setBootStep('data', 'done');
+    setBootStep('render', 'active');
+    setBootProgress(88, 'RENDERING', 'データを反映しています', '画面コンポーネントを最終確認中...');
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    setBootStep('render', 'done');
+    setBootProgress(100, 'ONLINE', '接続完了', 'すべての初期化処理が完了しました');
+    setTimeout(() => overlay.classList.add('is-hidden'), 450);
+  } catch (err) {
+    setBootProgress(100, 'CONNECTION ERROR', '読み込みに失敗しました', 'サーバーとの通信を確立できませんでした');
+    errorBox.textContent = err.message + '。サーバーログと /admin/api/status を確認してください。';
+    errorBox.classList.add('show');
+    retry.classList.add('show');
+  }
+}
+document.getElementById('refresh-btn').addEventListener('click', () => {
+  refreshCurrent();
+});
+bootDashboard();
 setInterval(loadStatus, 30000);
 </script>
 </body>

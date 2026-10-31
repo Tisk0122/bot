@@ -20,7 +20,7 @@
 // ==============================================
 
 import 'dotenv/config';
-import { EmbedBuilder, MessageFlags } from 'discord.js';
+import { EmbedBuilder, MessageFlags, PermissionFlagsBits, ChannelType } from 'discord.js';
 import { getStudyRecord } from '../utils/studyRoleStore.js';
 
 const STUDY_VC_ID          = process.env.STUDY_VC_ID          || '1505121212182036591';
@@ -75,59 +75,70 @@ async function sendLog(client, embed) {
 //   guild.roles.fetch() で必ず最新情報をAPIから取得することで修正。
 // ==============================================
 async function checkAndEnforceRole(member) {
-    // キャッシュに頼らず API から最新のロール一覧を取得する
-    const roles = await member.guild.roles.fetch().catch(() => null);
+    // Fail closed: 権限情報を確認できない場合も入室を許可しない。
+    let roles;
+    try {
+        roles = await member.guild.roles.fetch();
+    } catch (err) {
+        console.error(`[Study] ロール一覧の取得に失敗 (${member.id}): ${err.message}`);
+        await denyStudyEntry(member, '入室資格を確認できませんでした。時間をおいて再度お試しください。');
+        return true;
+    }
+
     if (!roles) {
-        console.warn('[Study] ロール一覧の取得に失敗しました。入室を許可します。');
-        return false;
+        console.error('[Study] ロール一覧が取得できません。安全のため入室を拒否します。');
+        await denyStudyEntry(member, '入室資格を確認できませんでした。管理者に連絡してください。');
+        return true;
     }
 
     const role = roles.find(r => r.name.toLowerCase() === STUDY_ROLE_NAME.toLowerCase());
-
-    // ロール自体がサーバーに存在しない → 入室OK
     if (!role) {
-        console.warn(`[Study] ロール「${STUDY_ROLE_NAME}」がサーバーに存在しません。入室を許可します。`);
-        return false;
+        console.error(`[Study] 必須ロール「${STUDY_ROLE_NAME}」が存在しません。安全のため入室を拒否します。`);
+        await denyStudyEntry(member, `入室に必要なロール「${STUDY_ROLE_NAME}」がサーバーにありません。管理者に連絡してください。`);
+        return true;
     }
 
-    // メンバー情報もキャッシュに頼らず最新を取得する
-    const freshMember = await member.guild.members.fetch(member.id).catch(() => null);
-    if (!freshMember) {
-        console.warn(`[Study] メンバー情報の取得に失敗しました (${member.id})。入室を許可します。`);
-        return false;
-    }
-
-    // ロールを持っている → 入室OK
-    if (freshMember.roles.cache.has(role.id)) return false;
-
-    // ロールを持っていない → 切断
+    let freshMember;
     try {
-        await freshMember.voice.disconnect('おべんきょVC: 勉強ロールなし');
-        console.log(`[Study] 入室拒否（ロールなし）: ${freshMember.user.tag} (${freshMember.id})`);
+        freshMember = await member.guild.members.fetch({ user: member.id, force: true });
     } catch (err) {
-        console.error(`[Study] 切断失敗 (${freshMember.user.tag}):`, err.message);
-        return true; // 切断失敗でも以降の処理はスキップ
+        console.error(`[Study] メンバー情報の取得に失敗 (${member.id}): ${err.message}`);
+        await denyStudyEntry(member, '入室資格を確認できませんでした。時間をおいて再度お試しください。');
+        return true;
     }
 
-    // 切断理由をDMで通知
+    if (!freshMember.roles.cache.has(role.id)) {
+        await denyStudyEntry(freshMember, `おべんきょVCに入室するには **${STUDY_ROLE_NAME}** ロールが必要です。管理者に付与を依頼してください。`);
+        return true;
+    }
+
+    return false;
+}
+
+// 入室拒否は、切断に失敗しても後続処理（セッション開始・入室ログ）へ進ませない。
+async function denyStudyEntry(member, reason) {
     try {
-        await freshMember.send({
+        if (member.voice?.channelId === STUDY_VC_ID) {
+            await member.voice.disconnect('おべんきょVC: 勉強ロールなし、または資格確認不能');
+        }
+        console.warn(`[Study] 入室拒否: ${member.user?.tag ?? member.id} (${member.id}) | ${reason}`);
+    } catch (err) {
+        console.error(`[Study] 入室拒否の切断に失敗 (${member.id}): ${err.message}`);
+    }
+
+    try {
+        await member.send({
             embeds: [
                 new EmbedBuilder()
                     .setTitle('おべんきょVC - 入室できません')
-                    .setDescription(
-                        `おべんきょVCに入室するには **${STUDY_ROLE_NAME}** ロールが必要です。\n\n` +
-                        '管理者に連絡してロールを付与してもらってください。'
-                    )
+                    .setDescription(reason)
                     .setColor(0xe74c3c)
                     .setTimestamp()
             ]
         });
     } catch {
-        // DM送信失敗は無視
+        // DM拒否は想定内。サーバーログには拒否理由を残す。
     }
-
-    return true; // 切断した = 処理終了
 }
 
 // ==============================================
@@ -261,6 +272,50 @@ export async function initStudyVc(client) {
     console.log(`[Study] おべんきょVC機能を有効化 | VC ID: ${STUDY_VC_ID}`);
     console.log(`[Study] ログチャンネル: ${STUDY_LOG_CHANNEL_ID} (サイレント送信)`);
 
+    // 起動時に必須ロールを検証。存在しなければ作成し、作成不能なら
+    // 入室判定側が fail-closed で全員を拒否する。
+    for (const [, guild] of client.guilds.cache) {
+        try {
+            const roles = await guild.roles.fetch();
+            let studyRole = roles?.find(r => r.name.toLowerCase() === STUDY_ROLE_NAME.toLowerCase());
+            if (!studyRole) {
+                studyRole = await guild.roles.create({
+                    name: STUDY_ROLE_NAME,
+                    color: 0x27ae60,
+                    reason: 'おべんきょVCの入室制限に必要なロール'
+                });
+                console.log(`[Study] 必須ロールを自動作成: ${studyRole.name} (${studyRole.id})`);
+            } else {
+                console.log(`[Study] 必須ロール確認済み: ${studyRole.name} (${studyRole.id})`);
+            }
+
+            // Discord側でも @everyone の接続を拒否し、勉強ロールだけを許可する。
+            // Bot側のvoiceStateUpdate制御と二重化して、イベント遅延時の隙を減らす。
+            const studyChannel = await guild.channels.fetch(STUDY_VC_ID);
+            if (!studyChannel || studyChannel.type !== ChannelType.GuildVoice) {
+                throw new Error(`STUDY_VC_ID (${STUDY_VC_ID}) が通常のボイスチャンネルではありません`);
+            }
+            const botMember = guild.members.me ?? await guild.members.fetch(client.user.id);
+            const botPermissions = studyChannel.permissionsFor(botMember);
+            if (!botPermissions?.has(PermissionFlagsBits.ManageChannels)) {
+                throw new Error('Botに「チャンネルの管理」権限がありません。VCの接続権限を自動設定できません');
+            }
+            await studyChannel.permissionOverwrites.edit(guild.roles.everyone, {
+                Connect: false
+            }, { reason: 'おべんきょVC: 勉強ロール必須化' });
+            await studyChannel.permissionOverwrites.edit(studyRole, {
+                Connect: true
+            }, { reason: 'おべんきょVC: 勉強ロール保持者に接続を許可' });
+            console.log(`[Study] VC接続権限を設定: @everyone=拒否 / ${STUDY_ROLE_NAME}=許可`);
+
+            if (!botPermissions.has(PermissionFlagsBits.MoveMembers)) {
+                console.error('[Study] Botに「メンバーを移動」権限がありません。権限設定で防げない入室の切断に失敗する可能性があります');
+            }
+        } catch (err) {
+            console.error(`[Study] 必須ロールの初期化失敗 (${guild.id})。入室は fail-closed で拒否します: ${err.message}`);
+        }
+    }
+
     // voiceStateUpdate リスナーを登録
     client.on('voiceStateUpdate', async (oldState, newState) => {
         // ボット自身は無視
@@ -296,7 +351,11 @@ export async function initStudyVc(client) {
             if (member.voice.channel?.id !== STUDY_VC_ID) continue;
 
             // 起動時にもロールチェック（checkAndEnforceRole 内で API 取得）
-            const wasKicked = await checkAndEnforceRole(member).catch(() => false);
+            const wasKicked = await checkAndEnforceRole(member).catch(async err => {
+                console.error(`[Study] 起動時の入室資格確認に失敗 (${member.id}): ${err.message}`);
+                await denyStudyEntry(member, '入室資格を確認できませんでした。管理者に連絡してください。');
+                return true;
+            });
             if (wasKicked) continue;
 
             sessions.set(member.id, { joinedAt: Date.now() });

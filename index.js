@@ -13,6 +13,7 @@ import { handleNicknameMessage } from './handlers/nicknameHandler.js';
 import { mountDashboard } from './web/dashboardRoutes.js';
 import { initStudyVc } from './handlers/studyVcHandler.js';
 import { startRecruitmentCleanupScheduler } from './utils/recruitStore.js';
+import { startDiscordStatusMonitor } from './handlers/discordStatusMonitor.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -295,6 +296,9 @@ client.once('ready', async () => {
     } catch (err) {
         console.warn('[StatusHandler] 起動時ボード更新に失敗:', err.message);
     }
+
+    // Discord公式ステータスモニター開始
+    startDiscordStatusMonitor(client);
 
     console.log('[SUCCESS] Bot初期化完了。全システム稼働中。');
 });

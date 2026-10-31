@@ -19,7 +19,7 @@ export async function execute(interaction) {
 
         let content = '';
         if (activeCount > 0) {
-            content = `🚨 **${activeCount}件のアクティブなインシデントが発生中です！**`;
+            content = `現在、**${activeCount}件**のインシデントが発生しています。`;
         }
 
         await interaction.editReply({
@@ -29,7 +29,7 @@ export async function execute(interaction) {
     } catch (err) {
         console.error('[discord-status] コマンドエラー:', err);
         await interaction.editReply({
-            content: '❌ ステータスの取得に失敗しました。しばらく経ってから再試行してください。\n直接確認: https://discordstatus.com',
+            content: 'ステータスを取得できませんでした。時間をおいて再試行してください。\n公式情報：https://discordstatus.com',
         });
     }
 }

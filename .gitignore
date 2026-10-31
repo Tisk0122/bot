@@ -1,2 +1,6 @@
 node_modules/
 .env
+
+# Discord status monitor runtime state (prevents duplicate notifications after restarts)
+data/discord_status_state.json
+data/discord_status_state.json.tmp

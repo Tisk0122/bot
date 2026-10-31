@@ -1,378 +1,328 @@
 // ==============================================
 // handlers/discordStatusMonitor.js
-// Discordの公式ステータス（discordstatus.com）を
-// リアルタイムに監視し、異常があれば通知チャンネルに投稿する
-//
-// 動作仕様:
-//  - 60秒ごとにDiscord公式APIをポーリング
-//  - 前回との差分を検出して新規インシデントのみ通知
-//  - 障害中は同じメッセージを編集してリアルタイム更新
-//  - 解決時は解決通知を追加投稿
+// Discord公式ステータス監視
+// 状態を data/discord_status_state.json に永続化し、再起動による重複通知を防止。
 // ==============================================
 
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { EmbedBuilder } from 'discord.js';
 
-// 通知先チャンネルID
-const NOTIFY_CHANNEL_ID = '1566125669627461852';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const DATA_DIR = path.join(__dirname, '..', 'data');
+const STATE_FILE = path.join(DATA_DIR, 'discord_status_state.json');
+const NOTIFY_CHANNEL_ID = process.env.DISCORD_STATUS_CHANNEL_ID || '1566125669627461852';
+const POLL_INTERVAL_MS = Math.max(30_000, Number(process.env.DISCORD_STATUS_POLL_INTERVAL_MS) || 60_000);
 
-// ポーリング間隔（ミリ秒）
-const POLL_INTERVAL_MS = 60_000;
-
-// Discord公式ステータスAPI
 const STATUS_API = {
-    summary:   'https://discordstatus.com/api/v2/summary.json',
+    summary: 'https://discordstatus.com/api/v2/summary.json',
     incidents: 'https://discordstatus.com/api/v2/incidents.json',
 };
 
-// ===== 日本語マッピング =====
 const INDICATOR_INFO = {
-    none:        { label: '全システム正常', emoji: '✅', color: 0x23a55a },
-    minor:       { label: '一部で問題が発生', emoji: '⚠️', color: 0xf5a623 },
-    major:       { label: '大規模な障害が発生', emoji: '🚨', color: 0xed4245 },
-    critical:    { label: '重大な障害が発生', emoji: '🔴', color: 0xed4245 },
-    maintenance: { label: 'メンテナンス中', emoji: '🔧', color: 0x5865f2 },
+    none:        { label: '正常', emoji: '🟢', color: 0x23a55a },
+    minor:       { label: '一部で問題', emoji: '🟡', color: 0xf5a623 },
+    major:       { label: '大規模障害', emoji: '🟠', color: 0xed4245 },
+    critical:    { label: '重大な障害', emoji: '🔴', color: 0xed4245 },
+    maintenance: { label: 'メンテナンス', emoji: '🔵', color: 0x5865f2 },
 };
-
 const STATUS_JP = {
-    operational:          '🟢 正常稼働中',
-    degraded_performance: '🟡 パフォーマンス低下',
-    partial_outage:       '🟠 一部障害',
-    major_outage:         '🔴 大規模障害',
-    under_maintenance:    '🔵 メンテナンス中',
+    operational: '正常',
+    degraded_performance: '性能低下',
+    partial_outage: '一部障害',
+    major_outage: '大規模障害',
+    under_maintenance: 'メンテナンス中',
 };
-
-const IMPACT_JP = {
-    none:        '情報',
-    minor:       '軽微',
-    major:       '重大',
-    critical:    '緊急',
-    maintenance: 'メンテ',
-};
-
+const IMPACT_JP = { none: '情報', minor: '軽微', major: '重大', critical: '緊急', maintenance: 'メンテナンス' };
 const UPDATE_STATUS_JP = {
-    investigating: '🔍 調査中',
-    identified:    '🎯 原因特定',
-    monitoring:    '👁️ 経過観察中',
-    resolved:      '✅ 解決済み',
-    update:        '📢 更新',
-    scheduled:     '📅 予定',
-    in_progress:   '⚙️ 進行中',
-    verifying:     '🔎 確認中',
-    completed:     '✅ 完了',
+    investigating: '調査中', identified: '原因特定', monitoring: '経過観察',
+    resolved: '解決済み', update: '更新', scheduled: '予定',
+    in_progress: '対応中', verifying: '確認中', completed: '完了',
 };
-
 const COMP_JP = {
-    'API': 'API', 'CloudFlare': 'CloudFlare',
-    'Gateway': 'ゲートウェイ', 'Media Proxy': 'メディアプロキシ',
-    'Voice': '音声通話', 'Push Notifications': 'プッシュ通知',
-    'Search': '検索', 'Third-party': 'サードパーティ連携',
-    'Payments': '決済', 'CDN': 'CDN',
-    'Server Listing': 'サーバーリスト',
+    API: 'API', CloudFlare: 'CloudFlare', Gateway: 'ゲートウェイ',
+    'Media Proxy': 'メディアプロキシ', Voice: '音声通話',
+    'Push Notifications': 'プッシュ通知', Search: '検索',
+    'Third-party': '外部サービス', Payments: '決済', CDN: 'CDN',
+    'Server Listing': 'サーバー一覧',
 };
 
-// ===== 状態管理 =====
-// インシデントID → { messageId, resolved } のマッピング
-const trackedIncidents = new Map();
-let lastIndicator = 'none';
-let summaryMessageId = null; // 全体ステータスサマリーメッセージのID
 let client = null;
 let pollingTimer = null;
+let pollRunning = false;
+let state = null;
 
-// ===== ユーティリティ =====
-
-function jst(isoStr) {
-    if (!isoStr) return '—';
-    return new Date(isoStr).toLocaleString('ja-JP', {
-        timeZone: 'Asia/Tokyo',
-        year: 'numeric', month: '2-digit', day: '2-digit',
+function defaultState() {
+    return { version: 1, initialized: false, indicator: null, summaryMessageId: null, incidents: {} };
+}
+function loadState() {
+    try {
+        const parsed = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+        return { ...defaultState(), ...parsed, incidents: parsed.incidents || {} };
+    } catch {
+        return defaultState();
+    }
+}
+function saveState() {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    const temp = `${STATE_FILE}.tmp`;
+    fs.writeFileSync(temp, JSON.stringify(state, null, 2), 'utf8');
+    fs.renameSync(temp, STATE_FILE);
+}
+function jst(value) {
+    if (!value) return '—';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '—';
+    return date.toLocaleString('ja-JP', {
+        timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit',
         hour: '2-digit', minute: '2-digit',
     }) + ' JST';
 }
-
-function truncate(str, len = 200) {
-    if (!str) return '';
-    return str.length > len ? str.slice(0, len) + '…' : str;
+function truncate(value, max = 220) {
+    const text = String(value || '');
+    return text.length > max ? `${text.slice(0, max)}…` : text;
 }
-
 async function fetchJson(url) {
-    const res = await fetch(url, {
-        headers: { 'Accept': 'application/json', 'User-Agent': 'DiscordBot-StatusMonitor/1.0' },
-        signal: AbortSignal.timeout(10_000),
+    const response = await fetch(url, {
+        headers: { Accept: 'application/json', 'User-Agent': 'DiscordBot-StatusMonitor/2.0' },
+        signal: AbortSignal.timeout(12_000),
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.json();
+    if (!response.ok) throw new Error(`Discord Status API HTTP ${response.status}`);
+    return response.json();
 }
-
-// ===== Embed 生成 =====
-
-/**
- * 全体ステータスサマリーEmbedを生成
- */
+function isResolved(incident) {
+    return incident.status === 'resolved' || incident.status === 'completed';
+}
+function latestUpdate(incident) {
+    const updates = incident.incident_updates || [];
+    const latest = updates[0] || {};
+    return `${latest.id || ''}:${latest.status || ''}:${latest.created_at || ''}`;
+}
+function incidentFingerprint(incident) {
+    return `${incident.status || ''}|${latestUpdate(incident)}`;
+}
 function buildSummaryEmbed(summary) {
-    const ind = summary.status?.indicator || 'none';
-    const info = INDICATOR_INFO[ind] || INDICATOR_INFO.none;
-    const components = (summary.components || []).slice(0, 8);
-
+    const indicator = summary.status?.indicator || 'none';
+    const info = INDICATOR_INFO[indicator] || INDICATOR_INFO.none;
+    const components = (summary.components || []).slice(0, 12);
     const embed = new EmbedBuilder()
-        .setTitle(`${info.emoji} Discord ステータス：${info.label}`)
+        .setTitle(`${info.emoji} Discord 公式ステータス`)
+        .setDescription(`**全体状態：${info.label}**`)
         .setColor(info.color)
         .setURL('https://discordstatus.com')
         .setTimestamp()
-        .setFooter({ text: '最終更新 ・ discordstatus.com' });
-
-    if (components.length > 0) {
-        const lines = components.map(c => {
-            const name = COMP_JP[c.name] || c.name;
-            const st = STATUS_JP[c.status] || c.status;
-            return `**${name}** — ${st}`;
+        .setFooter({ text: 'Discord Status ・ 定期更新' });
+    if (components.length) {
+        embed.addFields({
+            name: 'サービス別の状態',
+            value: components.map(component =>
+                `**${COMP_JP[component.name] || component.name}**　${STATUS_JP[component.status] || component.status}`
+            ).join('\n').slice(0, 1024),
         });
-        embed.addFields({ name: 'コンポーネント別ステータス', value: lines.join('\n'), inline: false });
     }
-
     return embed;
 }
-
-/**
- * インシデント通知Embedを生成
- */
-function buildIncidentEmbed(incident, isUpdate = false) {
-    const impact = IMPACT_JP[incident.impact] || incident.impact;
-    const info = incident.impact === 'critical' || incident.impact === 'major'
-        ? INDICATOR_INFO.major
-        : incident.impact === 'maintenance'
-        ? INDICATOR_INFO.maintenance
-        : incident.impact === 'minor'
-        ? INDICATOR_INFO.minor
-        : INDICATOR_INFO.none;
-
-    const isResolved = incident.status === 'resolved' || incident.status === 'completed';
-    const emoji = isResolved ? '✅' : info.emoji;
-    const color = isResolved ? 0x23a55a : info.color;
-
-    const updates = (incident.incident_updates || []).slice(0, 5);
-    const updateText = updates.map(u => {
-        const st = UPDATE_STATUS_JP[u.status] || u.status;
-        const time = jst(u.created_at);
-        return `**${st}** *(${time})*\n${truncate(u.body, 150)}`;
+function buildIncidentEmbed(incident, updated = false) {
+    const resolved = isResolved(incident);
+    const impact = IMPACT_JP[incident.impact] || incident.impact || '不明';
+    const color = resolved ? 0x23a55a :
+        incident.impact === 'critical' || incident.impact === 'major' ? 0xed4245 :
+        incident.impact === 'maintenance' ? 0x5865f2 : 0xf5a623;
+    const updates = (incident.incident_updates || []).slice(0, 4);
+    const updateText = updates.map(update => {
+        const status = UPDATE_STATUS_JP[update.status] || update.status || '更新';
+        return `**${status}**　${jst(update.created_at)}\n${truncate(update.body, 240)}`;
     }).join('\n\n');
-
     const embed = new EmbedBuilder()
-        .setTitle(`${emoji} [${impact}] ${incident.name}`)
+        .setTitle(`${resolved ? '🟢' : '⚠️'} ${truncate(incident.name, 180)}`)
+        .setDescription(updateText || '詳細情報は公式ステータスページを確認してください。')
+        .addFields(
+            { name: '影響度', value: String(impact), inline: true },
+            { name: '現在の状態', value: UPDATE_STATUS_JP[incident.status] || String(incident.status || '不明'), inline: true },
+            { name: '発生時刻', value: jst(incident.created_at), inline: true },
+        )
         .setColor(color)
         .setURL(incident.shortlink || 'https://discordstatus.com')
-        .setDescription(truncate(updateText || 'インシデントの詳細を確認中…', 1800))
-        .addFields(
-            { name: '現在のステータス', value: UPDATE_STATUS_JP[incident.status] || incident.status, inline: true },
-            { name: '深刻度', value: impact, inline: true },
-            { name: '開始', value: jst(incident.created_at), inline: true },
-        )
         .setTimestamp()
-        .setFooter({ text: isUpdate ? '📡 リアルタイム更新 ・ discordstatus.com' : '🚨 新規インシデント ・ discordstatus.com' });
-
-    if (isResolved) {
-        embed.addFields({ name: '解決時刻', value: jst(incident.resolved_at || incident.updated_at), inline: true });
-    }
-
+        .setFooter({ text: updated ? 'インシデント更新' : resolved ? '解決通知' : '新規インシデント' });
+    if (resolved) embed.addFields({ name: '解決時刻', value: jst(incident.resolved_at || incident.updated_at), inline: true });
     return embed;
 }
-
-// ===== チャンネル・メッセージ操作 =====
-
 async function getNotifyChannel() {
     try {
-        return await client.channels.fetch(NOTIFY_CHANNEL_ID);
-    } catch (err) {
-        console.error('[StatusMonitor] 通知チャンネルの取得に失敗:', err.message);
+        const channel = await client.channels.fetch(NOTIFY_CHANNEL_ID);
+        if (!channel?.isTextBased() || !channel.messages) {
+            console.error('[DiscordStatus] 通知先がテキストチャンネルではありません。');
+            return null;
+        }
+        return channel;
+    } catch (error) {
+        console.error('[DiscordStatus] 通知チャンネル取得失敗:', error.message);
         return null;
     }
 }
-
-async function sendOrUpdateSummary(channel, summary) {
-    const embed = buildSummaryEmbed(summary);
-
-    if (summaryMessageId) {
+async function updateSummary(channel, summary) {
+    const payload = { embeds: [buildSummaryEmbed(summary)] };
+    if (state.summaryMessageId) {
         try {
-            const msg = await channel.messages.fetch(summaryMessageId);
-            await msg.edit({ embeds: [embed] });
+            const message = await channel.messages.fetch(state.summaryMessageId);
+            await message.edit(payload);
             return;
         } catch {
-            // メッセージが消えていた場合は再送
-            summaryMessageId = null;
+            state.summaryMessageId = null;
         }
     }
-
-    try {
-        const msg = await channel.send({ embeds: [embed] });
-        summaryMessageId = msg.id;
-    } catch (err) {
-        console.error('[StatusMonitor] サマリーメッセージ送信失敗:', err.message);
-    }
+    const message = await channel.send(payload);
+    state.summaryMessageId = message.id;
+    saveState();
 }
-
-async function notifyNewIncident(channel, incident) {
-    const embed = buildIncidentEmbed(incident, false);
-    try {
-        const msg = await channel.send({ embeds: [embed] });
-        trackedIncidents.set(incident.id, { messageId: msg.id, resolved: false });
-        console.log(`[StatusMonitor] 新規インシデント通知: ${incident.name} (${incident.id})`);
-    } catch (err) {
-        console.error('[StatusMonitor] インシデント通知送信失敗:', err.message);
-    }
+async function sendIndicatorChange(channel, previous, current) {
+    const before = INDICATOR_INFO[previous] || INDICATOR_INFO.none;
+    const after = INDICATOR_INFO[current] || INDICATOR_INFO.none;
+    const recovered = current === 'none' && previous !== 'none';
+    const embed = new EmbedBuilder()
+        .setTitle(recovered ? '🟢 Discordの障害が改善しました' : '⚠️ Discordの状態が変化しました')
+        .setDescription(`**${before.label}** から **${after.label}** に変化しました。`)
+        .setColor(after.color)
+        .setURL('https://discordstatus.com')
+        .setTimestamp()
+        .setFooter({ text: 'Discord公式ステータス' });
+    await channel.send({ embeds: [embed] });
 }
+async function processIncidents(channel, incidents, initializing) {
+    const active = incidents.filter(incident => !isResolved(incident));
+    const seen = new Set();
 
-async function updateIncidentMessage(channel, incident) {
-    const tracked = trackedIncidents.get(incident.id);
-    if (!tracked || tracked.resolved) return;
+    for (const incident of incidents) {
+        if (!incident.id) continue;
+        seen.add(incident.id);
+        const previous = state.incidents[incident.id];
+        const fingerprint = incidentFingerprint(incident);
+        const resolved = isResolved(incident);
 
-    const isResolved = incident.status === 'resolved' || incident.status === 'completed';
-    const embed = buildIncidentEmbed(incident, !isResolved);
-
-    try {
-        const msg = await channel.messages.fetch(tracked.messageId);
-        await msg.edit({ embeds: [embed] });
-
-        if (isResolved) {
-            trackedIncidents.set(incident.id, { ...tracked, resolved: true });
-            // 解決通知を別途送信
-            const resolveEmbed = new EmbedBuilder()
-                .setTitle('✅ インシデント解決のお知らせ')
-                .setColor(0x23a55a)
-                .setDescription(`**${incident.name}** が解決しました。\n\nDiscordサービスは正常に戻っています。`)
-                .addFields({ name: '解決時刻', value: jst(incident.resolved_at || incident.updated_at), inline: true })
-                .setURL(incident.shortlink || 'https://discordstatus.com')
-                .setTimestamp()
-                .setFooter({ text: 'discordstatus.com' });
-            await channel.send({ embeds: [resolveEmbed] });
-            console.log(`[StatusMonitor] インシデント解決通知: ${incident.name}`);
+        if (!previous) {
+            if (!initializing) {
+                const message = await channel.send({ embeds: [buildIncidentEmbed(incident)] });
+                state.incidents[incident.id] = {
+                    messageId: message.id, fingerprint, resolved, updatedAt: Date.now(),
+                };
+            } else {
+                // 初回起動時の既存案件は基準値として記録し、再起動通知を発生させない。
+                state.incidents[incident.id] = { messageId: null, fingerprint, resolved, updatedAt: Date.now() };
+            }
+            saveState();
+            continue;
         }
-    } catch (err) {
-        console.error('[StatusMonitor] インシデントメッセージ更新失敗:', err.message);
+
+        if (previous.fingerprint === fingerprint && previous.resolved === resolved) continue;
+
+        // 既存メッセージがある場合は最新情報に差し替える。
+        if (previous.messageId) {
+            try {
+                const message = await channel.messages.fetch(previous.messageId);
+                await message.edit({ embeds: [buildIncidentEmbed(incident, true)] });
+            } catch (error) {
+                console.warn(`[DiscordStatus] 案件メッセージ更新失敗 (${incident.id}):`, error.message);
+            }
+        }
+
+        if (resolved && !previous.resolved) {
+            await channel.send({ embeds: [buildIncidentEmbed(incident, true)] });
+        } else if (!resolved && previous.fingerprint !== fingerprint) {
+            const update = (incident.incident_updates || [])[0];
+            // API側の更新内容が変わった場合のみ、更新通知を送る。
+            if (update) {
+                const embed = new EmbedBuilder()
+                    .setTitle('📢 Discord障害情報が更新されました')
+                    .setDescription(`**${truncate(incident.name, 180)}**\n\n${truncate(update.body, 1200)}`)
+                    .addFields({ name: '現在の状態', value: UPDATE_STATUS_JP[incident.status] || String(incident.status || '不明'), inline: true })
+                    .setColor(0xf5a623)
+                    .setURL(incident.shortlink || 'https://discordstatus.com')
+                    .setTimestamp();
+                await channel.send({ embeds: [embed] });
+            }
+        }
+        state.incidents[incident.id] = {
+            ...previous, fingerprint, resolved, updatedAt: Date.now(),
+        };
+        saveState();
+    }
+
+    // APIから消えた古い案件を無期限に保持しない（直近30日分を目安に整理）。
+    const cutoff = Date.now() - 30 * 24 * 60 * 60_000;
+    for (const [id, item] of Object.entries(state.incidents)) {
+        if (!seen.has(id) && item.updatedAt < cutoff) delete state.incidents[id];
     }
 }
-
-// ===== メインポーリング処理 =====
-
 async function poll() {
+    if (pollRunning || !client?.isReady()) return;
+    pollRunning = true;
     try {
-        const [summary, incData] = await Promise.all([
-            fetchJson(STATUS_API.summary),
-            fetchJson(STATUS_API.incidents),
+        const [summary, incidentData] = await Promise.all([
+            fetchJson(STATUS_API.summary), fetchJson(STATUS_API.incidents),
         ]);
-
-        const currentIndicator = summary.status?.indicator || 'none';
-        const incidents = incData.incidents || [];
-
         const channel = await getNotifyChannel();
         if (!channel) return;
 
-        // 1. 全体ステータスサマリーを更新（常時更新）
-        await sendOrUpdateSummary(channel, summary);
+        const indicator = summary.status?.indicator || 'none';
+        const incidents = incidentData.incidents || [];
+        const initializing = !state.initialized;
 
-        // 2. インジケーターが変化した場合、変化通知
-        if (currentIndicator !== lastIndicator) {
-            const prevInfo = INDICATOR_INFO[lastIndicator] || INDICATOR_INFO.none;
-            const currInfo = INDICATOR_INFO[currentIndicator] || INDICATOR_INFO.none;
+        await updateSummary(channel, summary);
 
-            // none→問題のある状態、または問題のある状態→noneへの遷移のみ通知
-            if (lastIndicator !== 'none' || currentIndicator !== 'none') {
-                const changeEmbed = new EmbedBuilder()
-                    .setTitle('📡 Discordステータス変化')
-                    .setColor(currInfo.color)
-                    .setDescription(`${prevInfo.emoji} **${prevInfo.label}** → ${currInfo.emoji} **${currInfo.label}**`)
-                    .setTimestamp()
-                    .setFooter({ text: 'discordstatus.com' });
-                await channel.send({ embeds: [changeEmbed] });
+        if (initializing) {
+            // 初回だけ現在値を基準として保存。初回の異常は一度だけ通知する。
+            if (indicator !== 'none') {
+                const normal = 'none';
+                await sendIndicatorChange(channel, normal, indicator);
             }
-
-            lastIndicator = currentIndicator;
+            state.indicator = indicator;
+            await processIncidents(channel, incidents, true);
+            state.initialized = true;
+            saveState();
+            console.log('[DiscordStatus] 初回状態を保存しました。次回起動以降は重複通知しません。');
+            return;
         }
 
-        // 3. アクティブなインシデントを処理
-        const activeIncidents = incidents.filter(i =>
-            i.status !== 'resolved' && i.status !== 'completed'
-        );
-        const recentResolved = incidents.filter(i =>
-            (i.status === 'resolved' || i.status === 'completed') &&
-            Date.now() - new Date(i.updated_at).getTime() < 30 * 60_000 // 30分以内に解決
-        );
-
-        for (const incident of [...activeIncidents, ...recentResolved]) {
-            if (trackedIncidents.has(incident.id)) {
-                // 既知のインシデント→更新
-                await updateIncidentMessage(channel, incident);
-            } else if (activeIncidents.includes(incident)) {
-                // 新規アクティブインシデント→通知
-                await notifyNewIncident(channel, incident);
-            }
+        if (state.indicator !== indicator) {
+            await sendIndicatorChange(channel, state.indicator || 'none', indicator);
+            state.indicator = indicator;
+            saveState();
         }
-
-        // 4. 解決済みで追跡中のものが一覧にない場合、終了処理
-        for (const [id, tracked] of trackedIncidents.entries()) {
-            if (tracked.resolved) continue;
-            const stillActive = incidents.find(i => i.id === id);
-            if (!stillActive) {
-                // APIから消えた（古いインシデント）
-                trackedIncidents.delete(id);
-            }
-        }
-
-    } catch (err) {
-        console.error('[StatusMonitor] ポーリングエラー:', err.message);
+        await processIncidents(channel, incidents, false);
+        saveState();
+    } catch (error) {
+        console.error('[DiscordStatus] 監視処理エラー:', error.message);
+    } finally {
+        pollRunning = false;
     }
 }
 
-// ===== 外部API =====
-
-/**
- * 現在のステータスを即時取得してEmbedを返す（/discord-status コマンド用）
- */
 export async function fetchCurrentStatus() {
-    const [summary, incData] = await Promise.all([
-        fetchJson(STATUS_API.summary),
-        fetchJson(STATUS_API.incidents),
+    const [summary, incidentData] = await Promise.all([
+        fetchJson(STATUS_API.summary), fetchJson(STATUS_API.incidents),
     ]);
-
-    const ind = summary.status?.indicator || 'none';
-    const info = INDICATOR_INFO[ind] || INDICATOR_INFO.none;
-    const components = summary.components || [];
-    const incidents = incData.incidents || [];
-    const activeInc = incidents.filter(i => i.status !== 'resolved' && i.status !== 'completed');
-
-    const embeds = [buildSummaryEmbed(summary)];
-
-    // アクティブなインシデントがあれば追加
-    for (const inc of activeInc.slice(0, 3)) {
-        embeds.push(buildIncidentEmbed(inc, false));
-    }
-
-    return { embeds, indicator: ind, info, activeCount: activeInc.length };
+    const indicator = summary.status?.indicator || 'none';
+    const info = INDICATOR_INFO[indicator] || INDICATOR_INFO.none;
+    const active = (incidentData.incidents || []).filter(item => !isResolved(item));
+    return {
+        embeds: [buildSummaryEmbed(summary), ...active.slice(0, 3).map(item => buildIncidentEmbed(item))],
+        indicator, info, activeCount: active.length,
+    };
 }
 
-/**
- * モニターを起動する
- * @param {Client} discordClient - discord.jsのClientインスタンス
- */
 export function startDiscordStatusMonitor(discordClient) {
+    if (pollingTimer) return;
     client = discordClient;
-
-    console.log('[StatusMonitor] Discord公式ステータス監視を開始します');
-    console.log(`[StatusMonitor] 通知チャンネル: ${NOTIFY_CHANNEL_ID}`);
-    console.log(`[StatusMonitor] ポーリング間隔: ${POLL_INTERVAL_MS / 1000}秒`);
-
-    // 起動時に即時チェック
-    setTimeout(() => poll(), 5_000);
-
-    // 定期ポーリング
-    pollingTimer = setInterval(() => poll(), POLL_INTERVAL_MS);
+    state = loadState();
+    console.log('[DiscordStatus] 公式ステータス監視を開始');
+    console.log(`[DiscordStatus] 通知先: ${NOTIFY_CHANNEL_ID} / 間隔: ${POLL_INTERVAL_MS / 1000}秒`);
+    // 起動時は保存済み状態と照合。変化がない限り通知は送らない。
+    setTimeout(() => void poll(), 5_000);
+    pollingTimer = setInterval(() => void poll(), POLL_INTERVAL_MS);
 }
-
-/**
- * モニターを停止する
- */
 export function stopDiscordStatusMonitor() {
-    if (pollingTimer) {
-        clearInterval(pollingTimer);
-        pollingTimer = null;
-        console.log('[StatusMonitor] Discord公式ステータス監視を停止しました');
-    }
+    if (pollingTimer) clearInterval(pollingTimer);
+    pollingTimer = null;
 }

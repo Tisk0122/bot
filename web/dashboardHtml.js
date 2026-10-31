@@ -514,7 +514,6 @@ tr.deleting td{background:var(--red-bg)!important;transition:background .15s}
             <label class="form-field"><span class="form-label">BAN管理チャンネル</span><select class="form-control" id="cfg-ban"></select><span class="form-help">既存のメッセージ式BAN管理コマンドとBANリストの送信先。</span></label>
             <label class="form-field"><span class="form-label">勉強VC</span><select class="form-control" id="cfg-study-vc"></select><span class="form-help">勉強中ロール以外の接続を拒否するボイスチャンネル。</span></label>
             <label class="form-field"><span class="form-label">勉強VCログ</span><select class="form-control" id="cfg-study-log"></select><span class="form-help">勉強VCの入退室ログをサイレント送信。</span></label>
-            <label class="form-field"><span class="form-label">AFKチャンネル</span><select class="form-control" id="cfg-afk"></select><span class="form-help">一定時間経過したメンバーの自動移動先。未設定なら無効。</span></label>
             <label class="form-field"><span class="form-label">管理ログチャンネル</span><select class="form-control" id="cfg-log"></select><span class="form-help">BAN・解除・メッセージ削除などの監査ログ。</span></label>
           </div>
         </div>
@@ -524,7 +523,6 @@ tr.deleting td{background:var(--red-bg)!important;transition:background .15s}
             <label class="form-field"><span class="form-label">勉強ロール名</span><input class="form-control" id="cfg-study-role-name" type="text" maxlength="80" placeholder="勉強中"><span class="form-help">未作成の場合は保存時に自動作成し、勉強VCの接続権限も設定。</span></label>
             <label class="form-field"><span class="form-label">管理者ロール</span><select class="form-control" id="cfg-admin-role"></select><span class="form-help">設定したロール、またはDiscord標準の「管理者」権限を持つメンバーに管理操作を許可。空欄でも管理者権限で利用できます。</span></label>
             <label class="form-field"><span class="form-label">認証済みロール</span><select class="form-control" id="cfg-verified-role"></select><span class="form-help">認証承認時に対象メンバーへ付与するロール。</span></label>
-            <label class="form-field"><span class="form-label">AFK移動までの時間（分）</span><input class="form-control" id="cfg-afk-timeout" type="number" min="1" max="240" step="1" value="30"><span class="form-help">1〜240分。変更すると現在のVC参加者のタイマーも再設定します。</span></label>
           </div>
           <div class="notice">勉強VCの保存時はDiscordのチャンネル権限も更新します。@everyone は接続拒否、勉強ロールは接続許可になります。Botには「チャンネルの管理」「ロールの管理」「メンバーを移動」権限が必要です。</div>
           <div class="form-actions"><button class="btn btn-primary" onclick="saveGuildConfig()">設定を保存</button><button class="btn btn-secondary" onclick="loadConfig()">変更を取り消す</button><button class="btn btn-secondary" onclick="syncStudyVcPermissions()">勉強VCの権限を再適用</button><span class="action-result" id="config-result"></span></div>
@@ -1353,19 +1351,16 @@ async function loadConfig() {
     setSelectOptions('cfg-ban', channels, cfg.banChannelId, '未設定', 'text');
     setSelectOptions('cfg-study-vc', channels, cfg.studyVoiceChannelId, '選択してください', 'voice');
     setSelectOptions('cfg-study-log', channels, cfg.studyLogChannelId, '未設定', 'text');
-    setSelectOptions('cfg-afk', channels, cfg.afkChannelId, 'AFK機能を無効にする', 'voice');
     setSelectOptions('cfg-log', channels, cfg.logChannelId, '未設定', 'text');
     setSelectOptions('cfg-admin-role', roles, cfg.adminRoleId, 'Discord権限で判定');
     setSelectOptions('cfg-verified-role', roles, cfg.verifiedRoleId, '未設定');
     setSelectOptions('announce-role', roles, '', 'メンションなし');
     populateActionChannels(channels);
     document.getElementById('cfg-study-role-name').value = cfg.studyRoleName || '勉強中';
-    document.getElementById('cfg-afk-timeout').value = cfg.afkTimeoutMinutes || 30;
     const health = document.getElementById('config-health');
     const study = data.studyVc || {};
-    const afk = data.afk || {};
     health.innerHTML = '<span class="status-dot ' + (study.enabled ? 'online' : 'offline') + '"></span><span>' +
-      '勉強VC: ' + (study.enabled ? '有効' : '未設定') + ' · AFK: ' + (afk.enabled ? '有効（' + esc(afk.timeout) + '分）' : '無効') +
+      '勉強VC: ' + (study.enabled ? '有効' : '未設定') +
       ' · 設定はサーバーに保存されます</span>';
     const verifyChannel = channels.find(c => c.id === cfg.verificationChannelId);
     document.getElementById('verify-channel-summary').textContent = verifyChannel ? '#' + verifyChannel.name : '認証チャンネルが未設定です。サーバー設定で指定してください。';
@@ -1385,8 +1380,6 @@ async function saveGuildConfig() {
     studyVoiceChannelId: document.getElementById('cfg-study-vc').value,
     studyLogChannelId: document.getElementById('cfg-study-log').value,
     studyRoleName: document.getElementById('cfg-study-role-name').value.trim(),
-    afkChannelId: document.getElementById('cfg-afk').value,
-    afkTimeoutMinutes: Number(document.getElementById('cfg-afk-timeout').value),
     logChannelId: document.getElementById('cfg-log').value,
     adminRoleId: document.getElementById('cfg-admin-role').value
   };

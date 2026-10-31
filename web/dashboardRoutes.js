@@ -12,7 +12,6 @@ import { getAllStudyRecords, getStudyRecord, deleteStudyRecord, setStudyRecord }
 import { buildRecruitEmbed, buildRecruitButtons, buildRecruitCloseButton } from '../utils/recruitEmbed.js';
 import { getGuildConfig, updateGuildConfig } from '../utils/guildConfigStore.js';
 import { applyStudyVcPermissions, enforceCurrentStudyMembers, getStudyVcStatus } from '../handlers/studyVcHandler.js';
-import { getAfkStatus, refreshAfkDetector } from '../handlers/afkHandler.js';
 import { logAction } from '../utils/logger.js';
 import { refreshBanListMessage } from '../handlers/banHandler.js';
 import { sendPreferenceSetupDm } from '../commands/recruit-notify-init.js';
@@ -54,8 +53,7 @@ export function mountDashboard(app, client) {
                 guildName: guild?.name || null,
                 memberCount: guild?.memberCount ?? null,
                 uptimeSeconds: Math.floor(process.uptime()),
-                studyVc: guild ? getStudyVcStatus(guild.id) : null,
-                afk: guild ? getAfkStatus(guild.id) : null
+                studyVc: guild ? getStudyVcStatus(guild.id) : null
             });
         } catch (err) {
             res.status(500).json({ error: err.message });
@@ -379,7 +377,7 @@ export function mountDashboard(app, client) {
             .filter(role => role.id !== guild.id && !role.managed)
             .map(role => ({ id: role.id, name: role.name, color: role.hexColor, position: role.position }))
             .sort((a, b) => b.position - a.position);
-        res.json({ guild: { id: guild.id, name: guild.name }, config, channels, roles, studyVc: getStudyVcStatus(guild.id), afk: getAfkStatus(guild.id) });
+        res.json({ guild: { id: guild.id, name: guild.name }, config, channels, roles, studyVc: getStudyVcStatus(guild.id) });
     });
 
     router.put('/api/config', async (req, res) => {
@@ -387,7 +385,7 @@ export function mountDashboard(app, client) {
         if (!guild) return;
         try {
             const body = req.body || {};
-            const allowed = ['verificationChannelId', 'moderationChannelId', 'banChannelId', 'verifiedRoleId', 'studyVoiceChannelId', 'studyLogChannelId', 'studyRoleName', 'afkChannelId', 'afkTimeoutMinutes', 'logChannelId', 'adminRoleId'];
+            const allowed = ['verificationChannelId', 'moderationChannelId', 'banChannelId', 'verifiedRoleId', 'studyVoiceChannelId', 'studyLogChannelId', 'studyRoleName', 'logChannelId', 'adminRoleId'];
             const patch = {};
             for (const key of allowed) if (Object.hasOwn(body, key)) patch[key] = body[key];
 
@@ -398,11 +396,6 @@ export function mountDashboard(app, client) {
                 if (id && !getTextChannel(guild, id)) return res.status(400).json({ error: `${key} に指定されたチャンネルが存在しないか、テキストチャンネルではありません。` });
                 patch[key] = id;
             }
-            if (Object.hasOwn(patch, 'afkChannelId')) {
-                const id = String(patch.afkChannelId ?? '');
-                if (id && !getVoiceChannel(guild, id)) return res.status(400).json({ error: 'AFKチャンネルには有効なボイスチャンネルを指定してください。' });
-                patch.afkChannelId = id;
-            }
             if (Object.hasOwn(patch, 'studyVoiceChannelId')) {
                 const id = String(patch.studyVoiceChannelId ?? '');
                 if (!id || !getVoiceChannel(guild, id)) return res.status(400).json({ error: '勉強VCには有効なボイスチャンネルを指定してください。' });
@@ -411,11 +404,6 @@ export function mountDashboard(app, client) {
             if (Object.hasOwn(patch, 'studyRoleName')) {
                 patch.studyRoleName = String(patch.studyRoleName || '').trim();
                 if (!patch.studyRoleName || patch.studyRoleName.length > 80) return res.status(400).json({ error: '勉強ロール名は1〜80文字で指定してください。' });
-            }
-            if (Object.hasOwn(patch, 'afkTimeoutMinutes')) {
-                const value = Number(patch.afkTimeoutMinutes);
-                if (!Number.isInteger(value) || value < 1 || value > 240) return res.status(400).json({ error: 'AFK時間は1〜240分の整数で指定してください。' });
-                patch.afkTimeoutMinutes = value;
             }
             for (const key of ['adminRoleId', 'verifiedRoleId']) {
                 if (!Object.hasOwn(patch, key)) continue;
@@ -427,9 +415,6 @@ export function mountDashboard(app, client) {
             const studySettingsChanged =
                 (Object.hasOwn(patch, 'studyVoiceChannelId') && patch.studyVoiceChannelId !== currentConfig.studyVoiceChannelId) ||
                 (Object.hasOwn(patch, 'studyRoleName') && patch.studyRoleName !== currentConfig.studyRoleName);
-            const afkSettingsChanged =
-                (Object.hasOwn(patch, 'afkChannelId') && patch.afkChannelId !== currentConfig.afkChannelId) ||
-                (Object.hasOwn(patch, 'afkTimeoutMinutes') && patch.afkTimeoutMinutes !== currentConfig.afkTimeoutMinutes);
             const banChannelChanged = Object.hasOwn(patch, 'banChannelId') && patch.banChannelId !== currentConfig.banChannelId;
             let studyVcResult = null;
             if (studySettingsChanged) {
@@ -440,9 +425,8 @@ export function mountDashboard(app, client) {
             if (banChannelChanged && patch.banChannelId) {
                 await refreshBanListMessage(client, guild, true);
             }
-            if (afkSettingsChanged) refreshAfkDetector(client);
             console.log(`[Dashboard] サーバー設定を更新: ${guild.id} (${Object.keys(patch).join(', ')})`);
-            res.json({ success: true, config: saved, studyVc: studyVcResult, afk: getAfkStatus(guild.id) });
+            res.json({ success: true, config: saved, studyVc: studyVcResult });
         } catch (err) {
             console.error('[ERROR] PUT /admin/api/config:', err);
             res.status(400).json({ error: err.message || '設定の保存に失敗しました。' });

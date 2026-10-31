@@ -7,7 +7,6 @@ import { Routes } from 'discord-api-types/v10';
 import { fileURLToPath } from 'url';
 import express from 'express';
 import { initAuditLogger } from './utils/logger.js';
-import { initAfkDetector } from './handlers/afkHandler.js';
 import { initMemberJoinNotifier } from './handlers/memberJoinHandler.js';
 import { handleNicknameMessage } from './handlers/nicknameHandler.js';
 import { mountDashboard } from './web/dashboardRoutes.js';
@@ -277,9 +276,6 @@ client.once('ready', async () => {
 
     // 監査ログ監視開始
     initAuditLogger(client);
-
-    // AFK自動検出開始
-    initAfkDetector(client);
 
     // おべんきょVC専用ハンドラー開始
     await initStudyVc(client);

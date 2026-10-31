@@ -19,8 +19,6 @@ const DEFAULTS = {
     studyVoiceChannelId: process.env.STUDY_VC_ID || '1505121212182036591',
     studyLogChannelId: process.env.STUDY_LOG_CHANNEL_ID || '1472968673558790377',
     studyRoleName: process.env.STUDY_ROLE_NAME || '勉強中',
-    afkChannelId: process.env.AFK_CHANNEL_ID || '',
-    afkTimeoutMinutes: Math.min(240, Math.max(1, Number.parseInt(process.env.AFK_TIMEOUT_MINUTES, 10) || 30)),
     logChannelId: process.env.LOG_CHANNEL_ID || '',
     adminRoleId: process.env.ADMIN_ROLE_ID || ''
 };

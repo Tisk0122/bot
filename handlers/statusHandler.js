@@ -30,13 +30,13 @@ const PANEL_FILE    = path.join(DATA_DIR, 'status_panel.json');
 // color はボードの field カラーインジケーター用
 // ==============================================
 export const STATUS_PRESETS = [
-    { key: 'bath',  emoji: '🛁', label: 'お風呂',       color: '#5DADE2', description: '入浴中です'       },
-    { key: 'meal',  emoji: '🍚', label: 'ご飯',         color: '#F39C12', description: '食事中です'       },
-    { key: 'sleep', emoji: '😴', label: '就寝',         color: '#8E44AD', description: '就寝しています'   },
-    { key: 'nap',   emoji: '💤', label: '昼寝',         color: '#9B59B6', description: '昼寝中です'       },
-    { key: 'out',   emoji: '👜', label: '外出',         color: '#27AE60', description: '外出しています'   },
-    { key: 'away',  emoji: '🚶', label: 'ちょっと離席', color: '#E67E22', description: '少し席を外してます' },
-    { key: 'afk',   emoji: '📵', label: '放置中',       color: '#95A5A6', description: 'PCから離れています' },
+    { key: 'bath',  label: 'お風呂',       color: '#5DADE2', description: '入浴中です'       },
+    { key: 'meal',  label: 'ご飯',         color: '#F39C12', description: '食事中です'       },
+    { key: 'sleep', label: '就寝',         color: '#8E44AD', description: '就寝しています'   },
+    { key: 'nap',   label: '昼寝',         color: '#9B59B6', description: '昼寝中です'       },
+    { key: 'out',   label: '外出',         color: '#27AE60', description: '外出しています'   },
+    { key: 'away',  label: 'ちょっと離席', color: '#E67E22', description: '少し席を外してます' },
+    { key: 'afk',   label: '放置中',       color: '#95A5A6', description: 'PCから離れています' },
 ];
 
 // ==============================================
@@ -160,7 +160,6 @@ export function getPanelConfig(guildId) {
  * - 空の状態も明確に表示
  */
 export function buildBoardEmbed(guildStatuses) {
-    const now = Date.now();
     const groups = {};
     let totalActive = 0;
 
@@ -192,21 +191,14 @@ export function buildBoardEmbed(guildStatuses) {
 
     if (totalActive === 0) {
         embed
-            .setTitle('📋  みんなの今')
-            .setDescription(
-                '```\n' +
-                '  現在ステータスを設定している\n' +
-                '  メンバーはいません。\n' +
-                '```'
-            );
+            .setTitle('みんなの今')
+            .setDescription('現在ステータスを設定しているメンバーはいません。');
         return embed;
     }
 
-    // タイトルに人数バッジ
-    embed.setTitle(`📋  みんなの今　　${totalActive}人が外出中`);
-
-    // 区切り線（Discordのembedで水平線代わり）
-    embed.setDescription('─'.repeat(32));
+    embed
+        .setTitle('みんなの今')
+        .setDescription(`ステータス設定中：**${totalActive}人**`);
 
     for (const key of activeKeys) {
         const preset  = STATUS_PRESETS.find(p => p.key === key);
@@ -223,7 +215,7 @@ export function buildBoardEmbed(guildStatuses) {
             return `　${name}　（${elapsed}）`;
         });
 
-        const fieldName  = `${preset.emoji}  ${preset.label}　${count > 1 ? `（${count}人）` : ''}`;
+        const fieldName  = count > 1 ? `${preset.label} ・ ${count}人` : preset.label;
         const fieldValue = lines.join('\n') || '（なし）';
 
         embed.addFields({ name: fieldName, value: fieldValue, inline: false });
@@ -240,14 +232,14 @@ export function buildPanelEmbed(guildStatuses = {}, userId = null) {
     const currentPreset = currentKey ? STATUS_PRESETS.find(p => p.key === currentKey) : null;
 
     const statusLine = currentPreset
-        ? `現在のステータス：**${currentPreset.emoji} ${currentPreset.label}**\nもう一度押すとクリアされます。`
-        : 'ボタンをタップしてステータスを設定できます。\nもう一度押すとクリアされます。';
+        ? `あなたのステータス：**${currentPreset.label}**\n同じボタンをもう一度押すと解除できます。`
+        : 'ボタンを選ぶと、ステータスを設定できます。\n設定中のボタンをもう一度押すと解除できます。';
 
     return new EmbedBuilder()
-        .setTitle('📍  ステータスパネル')
+        .setTitle('ステータスパネル')
         .setDescription(statusLine)
         .setColor(currentPreset ? currentPreset.color : '#57F287')
-        .setFooter({ text: 'タップでトグル切り替え' });
+        .setFooter({ text: '選択して設定 ・ もう一度押して解除' });
 }
 
 /**
@@ -265,7 +257,7 @@ export function buildPanelComponents(guildStatuses, userId) {
             row.addComponents(
                 new ButtonBuilder()
                     .setCustomId(`status:${preset.key}`)
-                    .setLabel(`${preset.emoji}  ${preset.label}`)
+                    .setLabel(preset.label)
                     .setStyle(isActive ? ButtonStyle.Primary : ButtonStyle.Secondary)
             );
         }
@@ -324,8 +316,8 @@ export async function handleStatusButton(interaction) {
         const { cleared, preset } = toggleUserStatus(guild.id, user.id, displayName, statusKey);
 
         const msg = cleared
-            ? `✅  **${preset.emoji} ${preset.label}** のステータスをクリアしました。`
-            : `✅  **${preset.emoji} ${preset.label}** をセットしました！\nボードに反映されました。`;
+            ? `**${preset.label}** のステータスを解除しました。`
+            : `**${preset.label}** に設定しました。\nボードを更新しました。`;
 
         await interaction.editReply({ content: msg });
 
@@ -334,6 +326,6 @@ export async function handleStatusButton(interaction) {
 
     } catch (err) {
         console.error('[StatusHandler] ステータスボタン処理エラー:', err);
-        await interaction.editReply({ content: '⚠️  エラーが発生しました。もう一度お試しください。' });
+        await interaction.editReply({ content: 'エラーが発生しました。時間をおいてもう一度お試しください。' });
     }
 }

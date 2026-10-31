@@ -10,6 +10,7 @@ import { logAction } from '../utils/logger.js';
 import { setDmPreference, getRecruitment, updateRecruitment, closeRecruitment } from '../utils/recruitStore.js';
 import { buildRecruitEmbed, buildRecruitButtons, buildRecruitCloseButton } from '../utils/recruitEmbed.js';
 import { getGuildConfig } from '../utils/guildConfigStore.js';
+import { handleStatusButton } from './statusHandler.js';
 
 
 // 管理者ロールが未設定でも、Discord標準のAdministrator権限を持つユーザーは
@@ -473,6 +474,9 @@ export async function handleButtonInteraction(interaction) {
     } else if (customId.startsWith('recruit_close:')) {
         const recruitId = customId.split(':')[1];
         await handleRecruitClose(interaction, recruitId);
+
+    } else if (customId.startsWith('status:')) {
+        await handleStatusButton(interaction);
 
     } else {
         console.warn(`[WARNING] 未知のボタンインタラクション: ${customId}`);

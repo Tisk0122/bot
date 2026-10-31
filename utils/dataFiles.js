@@ -21,7 +21,9 @@ export const ALLOWED_FILES = [
     'recruitments.json',
     'ban_data.json',
     'study_roles.json',
-    'guild_config.json'
+    'guild_config.json',
+    'user_statuses.json',
+    'status_panel.json'
 ];
 
 function assertAllowed(name) {

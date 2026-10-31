@@ -7,6 +7,7 @@ import { Routes } from 'discord-api-types/v10';
 import { fileURLToPath } from 'url';
 import express from 'express';
 import { initAuditLogger } from './utils/logger.js';
+import { refreshStatusBoard } from './handlers/statusHandler.js';
 import { initMemberJoinNotifier } from './handlers/memberJoinHandler.js';
 import { handleNicknameMessage } from './handlers/nicknameHandler.js';
 import { mountDashboard } from './web/dashboardRoutes.js';
@@ -286,6 +287,15 @@ client.once('ready', async () => {
     // 新規メンバー向け 募集DM通知の初期案内 開始
     initMemberJoinNotifier(client);
 
+    // ステータスボードを起動時に最新化（Bot再起動後もボードが正しい状態になるように）
+    try {
+        const { getPanelConfig } = await import('./handlers/statusHandler.js');
+        const cfg = getPanelConfig(guildId);
+        if (cfg) await refreshStatusBoard(client, guildId);
+    } catch (err) {
+        console.warn('[StatusHandler] 起動時ボード更新に失敗:', err.message);
+    }
+
     console.log('[SUCCESS] Bot初期化完了。全システム稼働中。');
 });
 
@@ -360,6 +370,20 @@ client.on('messageCreate', async message => {
         await handleNicknameMessage(message);
     } catch (err) {
         console.error('[ERROR] ニックネームメッセージ処理エラー:', err);
+    }
+});
+
+// ==============================================
+// メンバー退出時: ステータスをクリア
+// ==============================================
+client.on('guildMemberRemove', async member => {
+    try {
+        const { clearUserStatus, getPanelConfig } = await import('./handlers/statusHandler.js');
+        clearUserStatus(member.guild.id, member.id);
+        const cfg = getPanelConfig(member.guild.id);
+        if (cfg) await refreshStatusBoard(client, member.guild.id);
+    } catch (err) {
+        console.warn('[StatusHandler] 退出時ステータスクリアに失敗:', err.message);
     }
 });
 

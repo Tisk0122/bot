@@ -8,6 +8,7 @@ export const DASHBOARD_HTML = /* html */`<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Crect width=%2264%22 height=%2264%22 rx=%2214%22 fill=%22%235865f2%22/%3E%3Cpath d=%22M32 10 51 18v14c0 12-8 19-19 23C21 51 13 44 13 32V18z%22 fill=%22none%22 stroke=%22white%22 stroke-width=%224%22/%3E%3C/svg%3E">
 <title>hinansaba 管理ダッシュボード</title>
 <style>
 :root {
@@ -841,7 +842,7 @@ async function loadOverview() {
   } else {
     stbody.innerHTML = studyList.map(r =>
       '<tr>' +
-      '<td><div class="user-cell">' + (r.avatarUrl ? '<img class="avatar" src="' + esc(r.avatarUrl) + '" onerror="this.style.display=\'none\'">' : '') + '<span class="user-name">' + esc(r.displayName) + '</span></div></td>' +
+      '<td><div class="user-cell">' + (r.avatarUrl ? '<img class="avatar" src="' + esc(r.avatarUrl) + '" onerror="this.remove()">' : '') + '<span class="user-name">' + esc(r.displayName) + '</span></div></td>' +
       '<td>' + (r.subject ? '<span class="pill pill-accent">' + esc(r.subject) + '</span>' : '<span style="color:var(--text3)">-</span>') + '</td>' +
       '<td>' + fmtDate(r.assignedAt) + '</td></tr>'
     ).join('');
@@ -894,7 +895,7 @@ function renderPreferences() {
     const pillClass = m.preference === 'in' ? 'pill-green' : m.preference === 'out' ? 'pill-red' : 'pill-gray';
     const pillLabel = m.preference === 'in' ? '受け取る' : m.preference === 'out' ? '受け取らない' : '未設定';
     return '<tr id="pref-row-' + m.userId + '">' +
-      '<td><div class="user-cell"><img class="avatar" src="' + esc(m.avatarUrl) + '" onerror="this.style.display=\'none\'"><span class="user-name">' + esc(m.displayName) + '</span></div></td>' +
+      '<td><div class="user-cell"><img class="avatar" src="' + esc(m.avatarUrl) + '" onerror="this.remove()"><span class="user-name">' + esc(m.displayName) + '</span></div></td>' +
       '<td style="font-family:monospace;font-size:12px;color:var(--text3)">' + m.userId + '</td>' +
       '<td><span class="pill ' + pillClass + '">' + pillLabel + '</span></td>' +
       '<td class="actions-cell">' +
@@ -1055,7 +1056,7 @@ function renderStudyRoles() {
 
   tbody.innerHTML = filtered.map(r =>
     '<tr id="study-row-' + r.userId + '">' +
-    '<td><div class="user-cell">' + (r.avatarUrl ? '<img class="avatar" src="' + esc(r.avatarUrl) + '" onerror="this.style.display=\'none\'">' : '') + '<span class="user-name">' + esc(r.displayName) + '</span></div></td>' +
+    '<td><div class="user-cell">' + (r.avatarUrl ? '<img class="avatar" src="' + esc(r.avatarUrl) + '" onerror="this.remove()">' : '') + '<span class="user-name">' + esc(r.displayName) + '</span></div></td>' +
     '<td style="font-family:monospace;font-size:12px;color:var(--text3)">' + r.userId + '</td>' +
     '<td>' + (r.subject ? '<span class="pill pill-accent">' + esc(r.subject) + '</span>' : '<span style="color:var(--text3)">未設定</span>') + '</td>' +
     '<td style="font-size:12px;color:var(--text3)">' + fmtDate(r.assignedAt) + '</td>' +
